@@ -1,0 +1,152 @@
+﻿<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Coffee Bean Analyzer — AI Detection</title>
+  <meta name="description" content="AI-powered coffee bean defect detection and analysis using YOLOv8">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+  <div class="bg-glow bg-glow-3"></div>
+
+  <main class="page">
+    <header class="hero">
+      <div class="logo">
+        <svg viewBox="0 0 40 40" width="40" height="40">
+          <defs>
+            <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#D4A574" />
+              <stop offset="100%" stop-color="#8B5E3C" />
+            </linearGradient>
+          </defs>
+          <ellipse cx="20" cy="20" rx="14" ry="18" fill="url(#g)" opacity="0.9" />
+          <path d="M20 4 C20 36 20 36 20 36" stroke="rgba(0,0,0,0.15)" stroke-width="1.5" fill="none" />
+        </svg>
+      </div>
+      <h1 class="title">Coffee Bean <span class="title-accent">Analyzer</span></h1>
+      <p class="subtitle">AI-powered defect detection & quality analysis</p>
+    </header>
+
+    <section class="upload-section">
+      <div class="upload-card glass-card">
+        <div id="drop-area" class="drop-area">
+          <div class="drop-icon">
+            <svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M24 32V16m0 0l-6 6m6-6l6 6" opacity="0.7" />
+              <rect x="6" y="6" width="36" height="36" rx="8" opacity="0.3" />
+            </svg>
+          </div>
+          <p class="drop-text">Drop your coffee bean image here</p>
+          <p class="drop-hint">or click to browse • PNG, JPG up to 10MB</p>
+          <label class="upload-btn"><input id="fileElem" type="file" accept="image/png, image/jpeg" hidden>Choose
+            File</label>
+        </div>
+
+        <div id="preview" class="preview hidden">
+          <img id="preview-img" src="#" alt="Preview" />
+        </div>
+
+        <div class="controls">
+          <div class="btn-group">
+            <button id="analyzeBtn" class="btn-primary" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path
+                  d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M9.76 14.24l-2.83 2.83m11.14 0l-2.83-2.83M9.76 9.76L6.93 6.93" />
+              </svg>
+              <span class="btn-text">Analyze</span>
+            </button>
+            <button id="resetBtn" class="btn-ghost">Reset</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="results" class="results hidden">
+      <div class="results-grid">
+        <div class="panel glass-card image-panel">
+          <div class="panel-header">
+            <h3>Detection Result</h3>
+            <div class="image-actions">
+              <button id="colorPickerBtn" class="btn-icon-small" title="Color picker">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M12 2v4m0 12v4m10-10h-4M6 12H2" />
+                </svg>
+              </button>
+              <a id="downloadBtn" class="btn-icon-small" href="#" download title="Download">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </a>
+            </div>
+          </div>
+          <div class="image-wrap" id="imageWrap">
+            <div id="image-overlay" class="image-overlay hidden">
+              <div class="spinner"></div>
+            </div>
+            <img id="annotatedImg" src="#" alt="Annotated result" />
+          </div>
+          <div id="pickedColor" class="picked-color hidden">
+            <div class="color-result">
+              <div class="color-swatch" id="pickedSwatch"></div>
+              <div class="color-details">
+                <p id="pickedColorName"></p>
+                <p id="pickedColorHex" class="color-hex"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel glass-card stats-panel">
+          <div class="panel-header">
+            <h3>Analysis</h3>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value" id="objectCount">--</div>
+              <div class="stat-label">Total Objects</div>
+            </div>
+            <div class="stat-card accent">
+              <div class="stat-value" id="beanCount">--</div>
+              <div class="stat-label">Coffee Beans</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="nonBeanCount">--</div>
+              <div class="stat-label">Non-Beans</div>
+            </div>
+
+            <div class="stat-card accent">
+              <div class="stat-value" id="avgBeanSize">--</div>
+              <div class="stat-label">Avg Bean Size (mm)</div>
+            </div>
+            <div class="stat-card full-width">
+              <div class="stat-value" id="procTime">--</div>
+              <div class="stat-label">Processing Time (ms)</div>
+            </div>
+          </div>
+
+          <div class="color-dist" id="colorDist"></div>
+          <div class="detections" id="detectionsList"></div>
+        </div>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden" role="alert"></div>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+
+</html>
