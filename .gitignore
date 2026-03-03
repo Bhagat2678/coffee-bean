@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Datasets (too large for GitHub)
+datasets/
+
+# Training runs/outputs
+runs/
+
+# Data (raw images and outputs)
+data/
+
+# Model weights (large binary files)
+models/*.pt
+
+# Uploaded images and annotated outputs
+website/uploads/
+website/static/annotated/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Database
+*.db

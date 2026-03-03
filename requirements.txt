@@ -1,0 +1,10 @@
+Flask
+Werkzeug
+numpy
+opencv-python
+ultralytics
+python-dotenv
+torch
+
+# Note: PyTorch is required by ultralytics / YOLO and typically installed per https://pytorch.org
+# Install torch separately if needed (choose correct CUDA build for GPU)
