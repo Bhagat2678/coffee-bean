@@ -70,11 +70,60 @@ CREATE TABLE analysis_summaries (
     reference_coin_count INTEGER DEFAULT 0 CHECK (reference_coin_count >= 0),
     confidence_threshold DECIMAL(3,2) NOT NULL,
     processing_duration_ms INTEGER NOT NULL,
+    -- Quality control fields
+    sample_weight_g DECIMAL(8,2) DEFAULT 350.00,
+    avg_density_g_per_bean DECIMAL(6,4),
+    quality_grade VARCHAR(5) CHECK (quality_grade IN ('AAA', 'AA', 'A', 'B', 'BA', 'C')),
+    quality_grade_label VARCHAR(30),
+    defect_count INTEGER DEFAULT 0 CHECK (defect_count >= 0),
+    defect_percentage DECIMAL(5,2) DEFAULT 0.00,
+    avg_bean_length_mm DECIMAL(5,2),
+    avg_bean_width_mm DECIMAL(5,2),
+    pixels_per_mm DECIMAL(6,2),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     processed_by VARCHAR(100) DEFAULT session_user,
     FOREIGN KEY (image_id, upload_timestamp) REFERENCES uploaded_images (image_id, upload_timestamp) ON DELETE CASCADE
 );
+
+-- ------------------------------------------
+-- 2b. screen_grading (per-screen bean counts)
+-- ------------------------------------------
+CREATE TABLE screen_grading (
+    grading_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    analysis_id UUID NOT NULL REFERENCES analysis_summaries(analysis_id) ON DELETE CASCADE,
+    screen_number VARCHAR(10) NOT NULL,  -- '20', '19', ..., 'Below 13'
+    aperture_mm VARCHAR(10) NOT NULL,    -- '8.00', '7.50', ..., '< 5.00'
+    bean_count INTEGER NOT NULL DEFAULT 0 CHECK (bean_count >= 0),
+    percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_by VARCHAR(100) DEFAULT session_user,
+    UNIQUE (analysis_id, screen_number)
+);
+
+CREATE INDEX idx_screen_grading_analysis ON screen_grading(analysis_id);
+
+-- ------------------------------------------
+-- 2c. bean_pair_mappings (ArcFace front-back)
+-- ------------------------------------------
+CREATE TABLE bean_pair_mappings (
+    pair_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    front_analysis_id UUID NOT NULL REFERENCES analysis_summaries(analysis_id) ON DELETE CASCADE,
+    back_analysis_id UUID REFERENCES analysis_summaries(analysis_id) ON DELETE SET NULL,
+    front_bean_index INTEGER NOT NULL,
+    back_bean_index INTEGER NOT NULL,
+    similarity_score DECIMAL(5,4) NOT NULL CHECK (similarity_score >= 0 AND similarity_score <= 1),
+    front_bbox JSONB,
+    back_bbox JSONB,
+    paired_crop_path VARCHAR(500),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_by VARCHAR(100) DEFAULT session_user
+);
+
+CREATE INDEX idx_bean_pairs_front ON bean_pair_mappings(front_analysis_id);
+CREATE INDEX idx_bean_pairs_similarity ON bean_pair_mappings(similarity_score DESC);
 
 -- ------------------------------------------
 -- 3. bean_classification_summaries
@@ -156,6 +205,8 @@ CREATE TRIGGER upd_uploaded_images BEFORE UPDATE ON uploaded_images FOR EACH ROW
 CREATE TRIGGER upd_analysis_summaries BEFORE UPDATE ON analysis_summaries FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER upd_bean_classification_summaries BEFORE UPDATE ON bean_classification_summaries FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER upd_detected_beans BEFORE UPDATE ON detected_beans FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER upd_screen_grading BEFORE UPDATE ON screen_grading FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER upd_bean_pair_mappings BEFORE UPDATE ON bean_pair_mappings FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ------------------------------------------
 -- Indexes

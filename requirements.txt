@@ -5,6 +5,8 @@ opencv-python
 ultralytics
 python-dotenv
 torch
+torchvision
+scipy
 
 # Note: PyTorch is required by ultralytics / YOLO and typically installed per https://pytorch.org
 # Install torch separately if needed (choose correct CUDA build for GPU)

@@ -23,9 +23,10 @@ data/
 # Model weights (large binary files)
 models/*.pt
 
-# Uploaded images and annotated outputs
+# Uploaded images, annotated outputs, and ArcFace pairs
 website/uploads/
 website/static/annotated/
+website/static/pairs/
 
 # IDE
 .vscode/

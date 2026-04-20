@@ -1,11 +1,11 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Coffee Bean Analyzer — AI Detection</title>
-  <meta name="description" content="AI-powered coffee bean defect detection and analysis using YOLOv8">
+  <title>Coffee Bean Analyzer — AI Detection & Grading</title>
+  <meta name="description" content="AI-powered coffee bean defect detection, screen grading, and quality analysis using YOLOv8">
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap"
     rel="stylesheet">
@@ -18,6 +18,7 @@
   <div class="bg-glow bg-glow-3"></div>
 
   <main class="page">
+    <!-- ═══════ HEADER ═══════ -->
     <header class="hero">
       <div class="logo">
         <svg viewBox="0 0 40 40" width="40" height="40">
@@ -32,35 +33,143 @@
         </svg>
       </div>
       <h1 class="title">Coffee Bean <span class="title-accent">Analyzer</span></h1>
-      <p class="subtitle">AI-powered defect detection & quality analysis</p>
+      <p class="subtitle">AI-powered defect detection, screen grading &amp; quality analysis</p>
     </header>
 
-    <section class="upload-section">
-      <div class="upload-card glass-card">
-        <div id="drop-area" class="drop-area">
-          <div class="drop-icon">
-            <svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"
-              stroke-linecap="round" stroke-linejoin="round">
-              <path d="M24 32V16m0 0l-6 6m6-6l6 6" opacity="0.7" />
-              <rect x="6" y="6" width="36" height="36" rx="8" opacity="0.3" />
-            </svg>
-          </div>
-          <p class="drop-text">Drop your coffee bean image here</p>
-          <p class="drop-hint">or click to browse • PNG, JPG up to 10MB</p>
-          <label class="upload-btn"><input id="fileElem" type="file" accept="image/png, image/jpeg" hidden>Choose
-            File</label>
+    <!-- ═══════ INSTRUCTIONS PANEL ═══════ -->
+    <section class="instructions-section" id="instructionsSection">
+      <div class="instructions-card glass-card">
+        <div class="instructions-header">
+          <h2 class="instructions-title">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            Sample Preparation Guide
+          </h2>
+          <p class="instructions-subtitle">Follow these steps for accurate analysis results</p>
         </div>
 
-        <div id="preview" class="preview hidden">
-          <img id="preview-img" src="#" alt="Preview" />
+        <div class="steps-grid">
+          <!-- Step 1 -->
+          <div class="step-card">
+            <div class="step-number">1</div>
+            <div class="step-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v1m0 16v1m8.66-13.66l-.71.71M4.05 19.95l-.71.71M21 12h-1M4 12H3m16.66 7.66l-.71-.71M4.05 4.05l-.71-.71"/><circle cx="12" cy="12" r="4"/></svg>
+            </div>
+            <h3 class="step-title">Weigh 350g Sample</h3>
+            <p class="step-desc">Weigh exactly <strong>350 grams</strong> of coffee beans using a digital scale</p>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="step-card">
+            <div class="step-number">2</div>
+            <div class="step-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M10 4v16"/></svg>
+            </div>
+            <h3 class="step-title">Spread on A4 Sheet</h3>
+            <p class="step-desc">Spread beans <strong>evenly</strong> on a white A4-size paper — no overlapping</p>
+          </div>
+
+          <!-- Step 3 -->
+          <div class="step-card">
+            <div class="step-number">3</div>
+            <div class="step-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><circle cx="18" cy="8" r="1"/></svg>
+            </div>
+            <h3 class="step-title">Photo — Front Side</h3>
+            <p class="step-desc">Take a <strong>top-down photo</strong> of the front-facing beans in a <strong>well-lit room</strong></p>
+          </div>
+
+          <!-- Step 4 -->
+          <div class="step-card">
+            <div class="step-number">4</div>
+            <div class="step-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+            </div>
+            <h3 class="step-title">Flip &amp; Photo — Back Side</h3>
+            <p class="step-desc">Carefully <strong>flip all beans</strong> and take a second photo of the back side</p>
+          </div>
+        </div>
+
+        <div class="tips-bar">
+          <div class="tip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4m0 12v4m10-10h-4M6 12H2"/><circle cx="12" cy="12" r="4"/></svg>
+            Well-lit room, avoid shadows
+          </div>
+          <div class="tip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/></svg>
+            Place a coin for size reference
+          </div>
+          <div class="tip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+            Keep camera parallel to paper
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════ UPLOAD SECTION ═══════ -->
+    <section class="upload-section">
+      <div class="upload-card glass-card">
+
+        <!-- Sample Weight Input -->
+        <div class="weight-input-row">
+          <label for="sampleWeight" class="weight-label">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6"/><circle cx="8" cy="8" r="2"/><circle cx="16" cy="16" r="2"/></svg>
+            Sample Weight
+          </label>
+          <div class="weight-field">
+            <input type="number" id="sampleWeight" value="350" min="1" max="5000" step="1">
+            <span class="weight-unit">grams</span>
+          </div>
+        </div>
+
+        <!-- Dual Upload Areas -->
+        <div class="dual-upload">
+          <!-- Front Image -->
+          <div class="upload-slot">
+            <div class="upload-slot-badge front-badge">Front Side</div>
+            <div id="drop-front" class="drop-area drop-area-dual" data-side="front">
+              <div class="drop-icon">
+                <svg viewBox="0 0 48 48" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M24 32V16m0 0l-6 6m6-6l6 6" opacity="0.7" />
+                  <rect x="6" y="6" width="36" height="36" rx="8" opacity="0.3" />
+                </svg>
+              </div>
+              <p class="drop-text-sm">Drop front-side image</p>
+              <p class="drop-hint-sm">or click to browse</p>
+              <label class="upload-btn-sm"><input id="fileFront" type="file" accept="image/png, image/jpeg" hidden>Choose</label>
+            </div>
+            <div id="preview-front" class="preview-mini hidden">
+              <img id="preview-front-img" src="#" alt="Front preview" />
+              <button class="remove-btn" data-side="front" title="Remove">&times;</button>
+            </div>
+          </div>
+
+          <!-- Back Image -->
+          <div class="upload-slot">
+            <div class="upload-slot-badge back-badge">Back Side</div>
+            <div id="drop-back" class="drop-area drop-area-dual" data-side="back">
+              <div class="drop-icon">
+                <svg viewBox="0 0 48 48" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M24 32V16m0 0l-6 6m6-6l6 6" opacity="0.7" />
+                  <rect x="6" y="6" width="36" height="36" rx="8" opacity="0.3" />
+                </svg>
+              </div>
+              <p class="drop-text-sm">Drop back-side image</p>
+              <p class="drop-hint-sm">or click to browse</p>
+              <label class="upload-btn-sm"><input id="fileBack" type="file" accept="image/png, image/jpeg" hidden>Choose</label>
+            </div>
+            <div id="preview-back" class="preview-mini hidden">
+              <img id="preview-back-img" src="#" alt="Back preview" />
+              <button class="remove-btn" data-side="back" title="Remove">&times;</button>
+            </div>
+          </div>
         </div>
 
         <div class="controls">
           <div class="btn-group">
             <button id="analyzeBtn" class="btn-primary" disabled>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path
-                  d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M9.76 14.24l-2.83 2.83m11.14 0l-2.83-2.83M9.76 9.76L6.93 6.93" />
+                <path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M9.76 14.24l-2.83 2.83m11.14 0l-2.83-2.83M9.76 9.76L6.93 6.93" />
               </svg>
               <span class="btn-text">Analyze</span>
             </button>
@@ -70,16 +179,18 @@
       </div>
     </section>
 
+    <!-- ═══════ RESULTS ═══════ -->
     <section id="results" class="results hidden">
       <div class="results-grid">
+
+        <!-- Left: Detection Images -->
         <div class="panel glass-card image-panel">
           <div class="panel-header">
             <h3>Detection Result</h3>
             <div class="image-actions">
               <button id="colorPickerBtn" class="btn-icon-small" title="Color picker">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M12 2v4m0 12v4m10-10h-4M6 12H2" />
+                  <circle cx="12" cy="12" r="3" /><path d="M12 2v4m0 12v4m10-10h-4M6 12H2" />
                 </svg>
               </button>
               <a id="downloadBtn" class="btn-icon-small" href="#" download title="Download">
@@ -91,12 +202,25 @@
               </a>
             </div>
           </div>
+
+          <!-- Front annotated -->
           <div class="image-wrap" id="imageWrap">
             <div id="image-overlay" class="image-overlay hidden">
               <div class="spinner"></div>
             </div>
-            <img id="annotatedImg" src="#" alt="Annotated result" />
+            <img id="annotatedImg" src="#" alt="Front — annotated result" />
           </div>
+
+          <!-- Back annotated (shown only if back image uploaded) -->
+          <div id="backImageSection" class="back-image-section hidden">
+            <div class="panel-header sub-header">
+              <h3>Back Side Detection</h3>
+            </div>
+            <div class="image-wrap">
+              <img id="annotatedImgBack" src="#" alt="Back — annotated result" />
+            </div>
+          </div>
+
           <div id="pickedColor" class="picked-color hidden">
             <div class="color-result">
               <div class="color-swatch" id="pickedSwatch"></div>
@@ -108,11 +232,13 @@
           </div>
         </div>
 
+        <!-- Right: Stats & Analysis -->
         <div class="panel glass-card stats-panel">
           <div class="panel-header">
             <h3>Analysis</h3>
           </div>
 
+          <!-- Core Stats -->
           <div class="stats-grid">
             <div class="stat-card">
               <div class="stat-value" id="objectCount">--</div>
@@ -126,18 +252,103 @@
               <div class="stat-value" id="nonBeanCount">--</div>
               <div class="stat-label">Non-Beans</div>
             </div>
-
             <div class="stat-card accent">
               <div class="stat-value" id="avgBeanSize">--</div>
               <div class="stat-label">Avg Bean Size (mm)</div>
             </div>
-            <div class="stat-card full-width">
-              <div class="stat-value" id="procTime">--</div>
-              <div class="stat-label">Processing Time (ms)</div>
+          </div>
+
+          <!-- Grade Badge -->
+          <div id="gradeBadge" class="grade-badge-wrap hidden">
+            <div class="grade-badge" id="gradeValue">--</div>
+            <div class="grade-details">
+              <span class="grade-label" id="gradeLabel">--</span>
+              <span class="grade-defects" id="gradeDefects">--</span>
             </div>
           </div>
 
+          <!-- Density & Weight -->
+          <div id="densitySection" class="density-section hidden">
+            <div class="section-title">Weight & Density</div>
+            <div class="density-grid">
+              <div class="density-item">
+                <span class="density-val" id="sampleWeightVal">--</span>
+                <span class="density-lbl">Sample Weight (g)</span>
+              </div>
+              <div class="density-item">
+                <span class="density-val" id="avgDensityVal">--</span>
+                <span class="density-lbl">Avg Weight / Bean (g)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Size Stats -->
+          <div id="sizeStatsSection" class="size-stats-section hidden">
+            <div class="section-title">Size Dimensions</div>
+            <div class="size-stats-grid">
+              <div class="size-stat">
+                <span class="size-val" id="avgLengthVal">--</span>
+                <span class="size-lbl">Avg Length (mm)</span>
+              </div>
+              <div class="size-stat">
+                <span class="size-val" id="avgWidthVal">--</span>
+                <span class="size-lbl">Avg Width (mm)</span>
+              </div>
+              <div class="size-stat">
+                <span class="size-val" id="lwRatioVal">--</span>
+                <span class="size-lbl">L/W Ratio</span>
+              </div>
+              <div class="size-stat">
+                <span class="size-val" id="measuredCountVal">--</span>
+                <span class="size-lbl">Beans Measured</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Screen Grading Table -->
+          <div id="screenSection" class="screen-section hidden">
+            <div class="section-title">Screen Grading</div>
+            <div class="screen-table-wrap">
+              <table class="screen-table" id="screenTable">
+                <thead>
+                  <tr>
+                    <th>Screen No.</th>
+                    <th>Aperture (mm)</th>
+                    <th>Count</th>
+                    <th>%</th>
+                  </tr>
+                </thead>
+                <tbody id="screenTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Abnormality / Defect Breakdown -->
+          <div id="defectSection" class="defect-section hidden">
+            <div class="section-title">Abnormalities / Defect Breakdown</div>
+            <div id="defectBreakdown" class="defect-breakdown"></div>
+          </div>
+
+          <!-- Color Distribution -->
           <div class="color-dist" id="colorDist"></div>
+
+          <!-- ArcFace Pairs (placeholder) -->
+          <div id="arcfaceSection" class="arcface-section hidden">
+            <div class="section-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+              Bean Mapping (ArcFace)
+            </div>
+            <p class="arcface-info" id="arcfaceInfo">--</p>
+          </div>
+
+          <!-- Processing Time -->
+          <div class="proc-time-bar">
+            <span class="proc-label">Processing Time</span>
+            <span class="proc-value" id="procTime">--</span>
+            <span class="proc-unit">ms</span>
+          </div>
+
+          <!-- Detection List -->
           <div class="detections" id="detectionsList"></div>
         </div>
       </div>

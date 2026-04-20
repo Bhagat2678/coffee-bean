@@ -1,11 +1,20 @@
-const fileElem = document.getElementById('fileElem')
-const dropArea = document.getElementById('drop-area')
-const preview = document.getElementById('preview')
-const previewImg = document.getElementById('preview-img')
+/* ═══════ Coffee Bean Analyzer — Frontend Logic ═══════ */
+
+// ── DOM Elements ──
+const fileFront = document.getElementById('fileFront')
+const fileBack = document.getElementById('fileBack')
+const dropFront = document.getElementById('drop-front')
+const dropBack = document.getElementById('drop-back')
+const previewFront = document.getElementById('preview-front')
+const previewBack = document.getElementById('preview-back')
+const previewFrontImg = document.getElementById('preview-front-img')
+const previewBackImg = document.getElementById('preview-back-img')
 const analyzeBtn = document.getElementById('analyzeBtn')
 const resetBtn = document.getElementById('resetBtn')
 const resultsSection = document.getElementById('results')
 const annotatedImg = document.getElementById('annotatedImg')
+const annotatedImgBack = document.getElementById('annotatedImgBack')
+const backImageSection = document.getElementById('backImageSection')
 const objectCountEl = document.getElementById('objectCount')
 const beanCountEl = document.getElementById('beanCount')
 const nonBeanCountEl = document.getElementById('nonBeanCount')
@@ -16,19 +25,51 @@ const detectionsList = document.getElementById('detectionsList')
 const toast = document.getElementById('toast')
 const downloadBtn = document.getElementById('downloadBtn')
 const imageOverlay = document.getElementById('image-overlay')
+const sampleWeightInput = document.getElementById('sampleWeight')
+
+// Grade elements
+const gradeBadge = document.getElementById('gradeBadge')
+const gradeValue = document.getElementById('gradeValue')
+const gradeLabel = document.getElementById('gradeLabel')
+const gradeDefects = document.getElementById('gradeDefects')
+
+// Density elements
+const densitySection = document.getElementById('densitySection')
+const sampleWeightVal = document.getElementById('sampleWeightVal')
+const avgDensityVal = document.getElementById('avgDensityVal')
+
+// Size stats elements
+const sizeStatsSection = document.getElementById('sizeStatsSection')
+const avgLengthVal = document.getElementById('avgLengthVal')
+const avgWidthVal = document.getElementById('avgWidthVal')
+const lwRatioVal = document.getElementById('lwRatioVal')
+const measuredCountVal = document.getElementById('measuredCountVal')
+
+// Screen table elements
+const screenSection = document.getElementById('screenSection')
+const screenTableBody = document.getElementById('screenTableBody')
+
+// Defect elements
+const defectSection = document.getElementById('defectSection')
+const defectBreakdown = document.getElementById('defectBreakdown')
+
+// ArcFace elements
+const arcfaceSection = document.getElementById('arcfaceSection')
+const arcfaceInfo = document.getElementById('arcfaceInfo')
 
 const PLACEHOLDER = '--'
-let currentFile = null
+let frontFile = null
+let backFile = null
 let toastTimer = null
 
 
+// ── Utilities ──
 
 function showToast(message, timeout = 3200) {
   if (toastTimer) {
     clearTimeout(toastTimer)
     toastTimer = null
   }
-
   toast.textContent = message
   toast.classList.remove('hidden')
   toastTimer = setTimeout(() => {
@@ -37,9 +78,10 @@ function showToast(message, timeout = 3200) {
 }
 
 function setAnalyzeState(isLoading) {
-  analyzeBtn.disabled = isLoading || !currentFile
-  analyzeBtn.querySelector('.btn-text').textContent = isLoading ? 'Analyzing...' : 'Upload and Analyze'
-  fileElem.disabled = isLoading
+  analyzeBtn.disabled = isLoading || !frontFile
+  analyzeBtn.querySelector('.btn-text').textContent = isLoading ? 'Analyzing...' : 'Analyze'
+  fileFront.disabled = isLoading
+  fileBack.disabled = isLoading
   if (imageOverlay) {
     imageOverlay.classList.toggle('hidden', !isLoading)
   }
@@ -59,12 +101,26 @@ function clearResults() {
   colorDistEl.innerHTML = ''
   annotatedImg.classList.remove('visible')
   annotatedImg.removeAttribute('src')
+  if (annotatedImgBack) {
+    annotatedImgBack.classList.remove('visible')
+    annotatedImgBack.removeAttribute('src')
+  }
+  if (backImageSection) backImageSection.classList.add('hidden')
   downloadBtn.removeAttribute('href')
   resetStats()
-  if (imageOverlay) {
-    imageOverlay.classList.add('hidden')
-  }
+  if (imageOverlay) imageOverlay.classList.add('hidden')
+
+  // Hide new sections
+  if (gradeBadge) gradeBadge.classList.add('hidden')
+  if (densitySection) densitySection.classList.add('hidden')
+  if (sizeStatsSection) sizeStatsSection.classList.add('hidden')
+  if (screenSection) screenSection.classList.add('hidden')
+  if (defectSection) defectSection.classList.add('hidden')
+  if (arcfaceSection) arcfaceSection.classList.add('hidden')
 }
+
+
+// ── Color helpers ──
 
 function colorNameToHex(name) {
   const map = {
@@ -93,21 +149,18 @@ function createColorSwatch(hex) {
 }
 
 function humanTypeLabel(type) {
-  if (type === 'coffee_bean') {
-    return 'Coffee bean'
-  }
-  if (type === 'non_bean') {
-    return 'Non-bean'
-  }
+  if (type === 'coffee_bean') return 'Coffee bean'
+  if (type === 'non_bean') return 'Non-bean'
   return 'Object'
 }
+
+
+// ── Render functions ──
 
 function renderColorDistribution(colorDistribution = {}) {
   colorDistEl.innerHTML = ''
   const entries = Object.entries(colorDistribution)
-  if (!entries.length) {
-    return
-  }
+  if (!entries.length) return
 
   const title = document.createElement('div')
   title.className = 'color-title'
@@ -119,10 +172,8 @@ function renderColorDistribution(colorDistribution = {}) {
     .forEach(([name, count]) => {
       const chip = document.createElement('div')
       chip.className = 'color-chip'
-
       const label = document.createElement('span')
       label.textContent = `${name}: ${count}`
-
       chip.appendChild(createColorSwatch(colorNameToHex(name)))
       chip.appendChild(label)
       colorDistEl.appendChild(chip)
@@ -147,7 +198,6 @@ function renderDetections(detections = []) {
 
     const hex = d.color && d.color.hex ? d.color.hex : '#b5b5b5'
     const colorName = d.color && d.color.name ? d.color.name : 'Unknown'
-    const confidence = Number(d.confidence || 0).toFixed(3)
     const sizeInfo = d.size_mm
     const sizeStr = sizeInfo ? ` | ${sizeInfo.width}×${sizeInfo.height}mm` : ''
 
@@ -165,7 +215,120 @@ function renderDetections(detections = []) {
   })
 }
 
-function handleFile(file) {
+function renderGrade(gradeData) {
+  if (!gradeData || !gradeBadge) return
+
+  gradeBadge.classList.remove('hidden')
+  gradeValue.textContent = gradeData.grade
+  gradeLabel.textContent = gradeData.label
+  gradeDefects.textContent = `${gradeData.defect_count} defect${gradeData.defect_count !== 1 ? 's' : ''} (${gradeData.defect_percentage}%)`
+
+  // Apply grade-specific color class
+  gradeValue.className = 'grade-badge'
+  const g = gradeData.grade.toLowerCase().replace(/\s+/g, '')
+  gradeValue.classList.add(`grade-${g}`)
+}
+
+function renderDensity(densityData) {
+  if (!densityData || !densitySection) return
+
+  densitySection.classList.remove('hidden')
+  sampleWeightVal.textContent = densityData.sample_weight_g || '--'
+
+  if (densityData.avg_weight_per_bean_g != null) {
+    avgDensityVal.textContent = densityData.avg_weight_per_bean_g.toFixed(3)
+  } else {
+    avgDensityVal.textContent = '--'
+  }
+}
+
+function renderSizeStats(sizeData) {
+  if (!sizeData || !sizeStatsSection) return
+  if (sizeData.avg_length_mm == null) return
+
+  sizeStatsSection.classList.remove('hidden')
+  avgLengthVal.textContent = sizeData.avg_length_mm
+  avgWidthVal.textContent = sizeData.avg_width_mm
+  lwRatioVal.textContent = sizeData.avg_lw_ratio
+  measuredCountVal.textContent = sizeData.bean_count_measured
+}
+
+function renderScreenTable(screenData) {
+  if (!screenData || !screenSection || !screenTableBody) return
+  if (!screenData.length) return
+
+  screenSection.classList.remove('hidden')
+  screenTableBody.innerHTML = ''
+
+  const maxPct = Math.max(...screenData.map(r => r.percentage), 1)
+
+  screenData.forEach(row => {
+    const tr = document.createElement('tr')
+
+    const tdScreen = document.createElement('td')
+    tdScreen.textContent = row.screen
+    tdScreen.style.fontWeight = '600'
+
+    const tdAperture = document.createElement('td')
+    tdAperture.textContent = row.aperture_mm
+
+    const tdCount = document.createElement('td')
+    tdCount.textContent = row.count
+
+    const tdPct = document.createElement('td')
+    const barWidth = Math.max(2, (row.percentage / maxPct) * 60)
+    tdPct.innerHTML = `<span class="screen-bar" style="width:${barWidth}px"></span>${row.percentage}%`
+
+    tr.appendChild(tdScreen)
+    tr.appendChild(tdAperture)
+    tr.appendChild(tdCount)
+    tr.appendChild(tdPct)
+    screenTableBody.appendChild(tr)
+  })
+}
+
+function renderDefectBreakdown(gradeData) {
+  if (!gradeData || !defectSection || !defectBreakdown) return
+  const breakdown = gradeData.defect_breakdown || {}
+  const entries = Object.entries(breakdown)
+  if (!entries.length) return
+
+  defectSection.classList.remove('hidden')
+  defectBreakdown.innerHTML = ''
+
+  entries.sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
+    const chip = document.createElement('div')
+    const cssClass = type === 'black' ? 'defect-black'
+      : type === 'broken' ? 'defect-broken'
+      : type === 'foreign' ? 'defect-foreign'
+      : 'defect-default'
+    chip.className = `defect-chip ${cssClass}`
+
+    const pct = gradeData.total_beans > 0
+      ? ((count / gradeData.total_beans) * 100).toFixed(1)
+      : '0.0'
+
+    chip.textContent = `${type}: ${count} (${pct}%)`
+    defectBreakdown.appendChild(chip)
+  })
+}
+
+function renderArcFace(data) {
+  if (!arcfaceSection || !arcfaceInfo) return
+
+  if (data.arcface_pair_count && data.arcface_pair_count > 0) {
+    arcfaceSection.classList.remove('hidden')
+    arcfaceInfo.textContent = `${data.arcface_pair_count} bean pair(s) matched between front and back images. Paired crops saved for training.`
+  } else if (data.back_annotated_image_url) {
+    arcfaceSection.classList.remove('hidden')
+    arcfaceInfo.textContent = 'Front and back images processed. ArcFace matching attempted — add a trained model for better results.'
+  }
+}
+
+
+// ── File handling ──
+
+function handleFile(file, side) {
   const allowed = ['image/png', 'image/jpeg']
   if (!allowed.includes(file.type)) {
     showToast('Invalid file type. Use PNG or JPG.')
@@ -176,67 +339,124 @@ function handleFile(file) {
     return
   }
 
-  currentFile = file
-  previewImg.src = URL.createObjectURL(file)
-  preview.classList.remove('hidden')
-  analyzeBtn.disabled = false
+  if (side === 'front') {
+    frontFile = file
+    previewFrontImg.src = URL.createObjectURL(file)
+    previewFront.classList.remove('hidden')
+    dropFront.classList.add('hidden')
+    analyzeBtn.disabled = false
+  } else {
+    backFile = file
+    previewBackImg.src = URL.createObjectURL(file)
+    previewBack.classList.remove('hidden')
+    dropBack.classList.add('hidden')
+  }
 }
 
-;['dragenter', 'dragover'].forEach(evt => {
-  dropArea.addEventListener(evt, e => {
-    e.preventDefault()
-    e.stopPropagation()
-    dropArea.classList.add('dragover')
-  })
-})
+function removeFile(side) {
+  if (side === 'front') {
+    frontFile = null
+    fileFront.value = ''
+    previewFront.classList.add('hidden')
+    dropFront.classList.remove('hidden')
+    analyzeBtn.disabled = true
+  } else {
+    backFile = null
+    fileBack.value = ''
+    previewBack.classList.add('hidden')
+    dropBack.classList.remove('hidden')
+  }
+}
 
-  ;['dragleave', 'drop'].forEach(evt => {
-    dropArea.addEventListener(evt, e => {
+
+// ── Drag & Drop for dual upload ──
+
+function setupDropZone(dropEl, fileInput, side) {
+  ;['dragenter', 'dragover'].forEach(evt => {
+    dropEl.addEventListener(evt, e => {
       e.preventDefault()
       e.stopPropagation()
-      dropArea.classList.remove('dragover')
+      dropEl.classList.add('dragover')
     })
   })
 
-dropArea.addEventListener('drop', e => {
-  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
-    handleFile(e.dataTransfer.files[0])
-  }
+  ;['dragleave', 'drop'].forEach(evt => {
+    dropEl.addEventListener(evt, e => {
+      e.preventDefault()
+      e.stopPropagation()
+      dropEl.classList.remove('dragover')
+    })
+  })
+
+  dropEl.addEventListener('drop', e => {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+      handleFile(e.dataTransfer.files[0], side)
+    }
+  })
+
+  dropEl.addEventListener('click', e => {
+    // Don't trigger if clicking the label/button itself
+    if (e.target.tagName === 'LABEL' || e.target.tagName === 'INPUT') return
+    fileInput.click()
+  })
+
+  fileInput.addEventListener('change', e => {
+    if (e.target.files && e.target.files[0]) {
+      handleFile(e.target.files[0], side)
+    }
+  })
+}
+
+setupDropZone(dropFront, fileFront, 'front')
+setupDropZone(dropBack, fileBack, 'back')
+
+// Remove buttons
+document.querySelectorAll('.remove-btn').forEach(btn => {
+  btn.addEventListener('click', e => {
+    e.stopPropagation()
+    removeFile(btn.dataset.side)
+  })
 })
 
-dropArea.addEventListener('click', () => fileElem.click())
 
-fileElem.addEventListener('change', e => {
-  if (e.target.files && e.target.files[0]) {
-    handleFile(e.target.files[0])
-  }
-})
+// ── Reset ──
 
 resetBtn.addEventListener('click', () => {
-  currentFile = null
-  fileElem.value = ''
-  preview.classList.add('hidden')
+  frontFile = null
+  backFile = null
+  fileFront.value = ''
+  fileBack.value = ''
+  previewFront.classList.add('hidden')
+  previewBack.classList.add('hidden')
+  dropFront.classList.remove('hidden')
+  dropBack.classList.remove('hidden')
   analyzeBtn.disabled = true
   clearResults()
+  sampleWeightInput.value = 350
 })
 
+
+// ── Analyze ──
+
 analyzeBtn.addEventListener('click', async () => {
-  if (!currentFile) {
-    showToast('No image selected.')
+  if (!frontFile) {
+    showToast('Please upload a front-side image.')
     return
   }
 
   setAnalyzeState(true)
   annotatedImg.classList.remove('visible')
+  if (annotatedImgBack) annotatedImgBack.classList.remove('visible')
 
   const formData = new FormData()
-  formData.append('image', currentFile)
-
-  // Add confidence threshold from slider
-  const confThreshold = document.getElementById('confThreshold')
-  if (confThreshold) {
-    formData.append('confidence_threshold', confThreshold.value)
+  formData.append('front_image', frontFile)
+  if (backFile) {
+    formData.append('back_image', backFile)
   }
+
+  // Sample weight
+  const weight = parseFloat(sampleWeightInput.value) || 350
+  formData.append('sample_weight', weight)
 
   try {
     const response = await fetch('/analyze', { method: 'POST', body: formData })
@@ -247,16 +467,24 @@ analyzeBtn.addEventListener('click', async () => {
       return
     }
 
+    // Front annotated image
     annotatedImg.onload = () => {
-      if (imageOverlay) {
-        imageOverlay.classList.add('hidden')
-      }
+      if (imageOverlay) imageOverlay.classList.add('hidden')
       annotatedImg.classList.add('visible')
     }
-
     annotatedImg.src = `${data.annotated_image_url}?t=${Date.now()}`
     downloadBtn.href = data.annotated_image_url
 
+    // Back annotated image (if available)
+    if (data.back_annotated_image_url && backImageSection && annotatedImgBack) {
+      backImageSection.classList.remove('hidden')
+      annotatedImgBack.onload = () => {
+        annotatedImgBack.classList.add('visible')
+      }
+      annotatedImgBack.src = `${data.back_annotated_image_url}?t=${Date.now()}`
+    }
+
+    // Core stats
     const objectCount = Number(data.object_count ?? data.bean_count ?? 0)
     const beanCount = Number(data.bean_count ?? 0)
     const nonBeanCount = Number(data.non_bean_count ?? Math.max(0, objectCount - beanCount))
@@ -266,15 +494,22 @@ analyzeBtn.addEventListener('click', async () => {
     nonBeanCountEl.textContent = nonBeanCount
     procTimeEl.textContent = Number(data.processing_time || 0).toFixed(1)
 
-    // Display average bean size
+    // Average bean size
     if (data.avg_bean_size_mm) {
       avgBeanSizeEl.textContent = `${data.avg_bean_size_mm.width} × ${data.avg_bean_size_mm.height}`
     } else {
       avgBeanSizeEl.textContent = 'No coin ref'
     }
 
+    // New sections
+    renderGrade(data.grade)
+    renderDensity(data.density)
+    renderSizeStats(data.size_stats)
+    renderScreenTable(data.screen_distribution)
+    renderDefectBreakdown(data.grade)
     renderColorDistribution(data.color_distribution || {})
     renderDetections(data.detections || [])
+    renderArcFace(data)
 
     resultsSection.classList.remove('hidden')
     const source = data.detection_source ? ` (${data.detection_source})` : ''
@@ -287,7 +522,9 @@ analyzeBtn.addEventListener('click', async () => {
   }
 })
 
-// Color picker functionality
+
+// ── Color picker ──
+
 const colorPickerBtn = document.getElementById('colorPickerBtn')
 const pickedColorSection = document.getElementById('pickedColor')
 const pickedSwatch = document.getElementById('pickedSwatch')
@@ -305,12 +542,10 @@ function rgbToHex(r, g, b) {
 }
 
 function rgbToColorName(r, g, b) {
-  // RGB to color name mapping for coffee beans
   const max = Math.max(r, g, b)
   const min = Math.min(r, g, b)
   const delta = max - min
 
-  // Calculate hue (0-360)
   let hue
   if (delta === 0) {
     hue = 0
@@ -322,13 +557,9 @@ function rgbToColorName(r, g, b) {
     hue = (60 * (((r - g) / delta) + 4) + 360) % 360
   }
 
-  // Calculate brightness (0-100)
   const brightness = (max / 255) * 100
-
-  // Calculate saturation (0-100)  
   const saturation = (max === 0) ? 0 : (delta / max) * 100
 
-  // Use brightness to distinguish gray tones
   if (saturation < 15) {
     if (brightness > 90) return 'White'
     if (brightness > 70) return 'Light Gray'
@@ -337,7 +568,6 @@ function rgbToColorName(r, g, b) {
     return 'Black'
   }
 
-  // Color-based mapping (coffee bean focused)
   if ((hue >= 0 && hue < 30) || hue >= 330) {
     if (brightness > 60) return 'Orange-Brown'
     if (brightness > 40) return 'Light Brown'
@@ -365,7 +595,7 @@ function handleColorPick() {
   colorPickerBtn.classList.toggle('active', isPickerMode)
 
   if (isPickerMode) {
-    imageWrap.style.cursor = 'eyedropper'
+    imageWrap.style.cursor = 'crosshair'
     showToast('Click on the image to sample color...', 5000)
   } else {
     imageWrap.style.cursor = 'default'
@@ -375,37 +605,31 @@ function handleColorPick() {
 function samplePixelColor(event) {
   if (!isPickerMode || !annotatedImg.src) return
 
-  // Create canvas from image
   const canvas = document.createElement('canvas')
   canvas.width = annotatedImg.naturalWidth
   canvas.height = annotatedImg.naturalHeight
   const ctx = canvas.getContext('2d')
   ctx.drawImage(annotatedImg, 0, 0)
 
-  // Get click position relative to displayed image
   const rect = annotatedImg.getBoundingClientRect()
   const x = event.clientX - rect.left
   const y = event.clientY - rect.top
 
-  // Scale to natural image dimensions
   const scaleX = annotatedImg.naturalWidth / rect.width
   const scaleY = annotatedImg.naturalHeight / rect.height
   const imgX = Math.round(x * scaleX)
   const imgY = Math.round(y * scaleY)
 
-  // Sample pixel
   const imageData = ctx.getImageData(imgX, imgY, 1, 1)
   const [r, g, b] = Array.from(imageData.data.slice(0, 3))
   const hex = rgbToHex(r, g, b)
   const colorName = rgbToColorName(r, g, b)
 
-  // Display result
   pickedSwatch.style.background = hex
   pickedColorName.textContent = colorName
   pickedColorHex.textContent = `RGB(${r}, ${g}, ${b}) · ${hex}`
   pickedColorSection.classList.remove('hidden')
 
-  // Exit picker mode
   isPickerMode = false
   colorPickerBtn.classList.remove('active')
   imageWrap.style.cursor = 'default'
