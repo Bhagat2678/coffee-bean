@@ -4,14 +4,14 @@ Detect, count, grade, and analyze coffee beans using a custom YOLOv8 model. Incl
 
 ## ✨ Features
 
-- **Pre-Analysis Guide** — Step-by-step photo instructions (A4 sheet, 350g sample, front & back shots)
+- **Pre-Analysis Guide** — Step-by-step photo instructions (white calibration template, 350g sample, front & back shots)
 - **Dual Image Upload** — Upload front-facing and back-facing bean photos separately
 - **Bean Detection & Counting** — Custom YOLOv8 model with contour fallback
-- **Defect Classification** — Black, broken, foreign matter classes
+ - **Defect Classification** — Black, broken, foreign, moldy, overfermented, Type A, and other defect types
 - **Screen Grading** — Maps bean sizes to standard screen numbers (13–20) with aperture sizes, counts, and percentages
 - **Quality Grade (AAA→C)** — Assigns a grade based on defect count (AAA = ≤3 defects, C = 60+)
 - **Weight & Density** — Enter 350g sample weight → avg weight per bean calculated automatically
-- **Size Dimensions** — Avg length, width, L/W ratio, size class distribution (requires coin reference)
+ - **Size Dimensions** — Avg length, width, L/W ratio, size class distribution (auto-calibrated from the white template, coin optional)
 - **Color Analysis** — Color distribution and pixel-level color picker
 - **ArcFace Mapping** — Front↔back bean matching infrastructure using ResNet-18 embeddings (swappable with trained ArcFace model)
 - **Web Interface** — Modern responsive Flask app with drag-and-drop upload
@@ -73,7 +73,7 @@ python website/app.py
 ## 📸 How to Use the Web App
 
 1. **Weigh** — Use exactly 350g of coffee beans (or enter your weight)
-2. **Spread** — Spread beans evenly on a white A4 sheet, no overlapping
+2. **Spread** — Spread beans evenly on the white calibration template, no overlapping
 3. **Photograph** — Take a well-lit top-down photo of the front side
 4. **Flip & Photograph** — Flip all beans and take a second photo of the back side
 5. **Upload** — Drop both images into the Front and Back upload zones
@@ -82,11 +82,13 @@ python website/app.py
    - Quality grade (AAA → C)
    - Screen grading table (Screen 13–20)
    - Avg weight per bean (density)
-   - Size dimensions (requires coin in the photo for mm calibration)
+   - Size dimensions (requires the white calibration template or a coin for mm calibration)
    - Color distribution
    - Defect breakdown
 
-> **Tip:** Place a **5-rupee coin** (23mm diameter) in the frame for automatic mm-size calibration.
+> **Important:** For accurate mm-size calibration, ensure the **white template/background** is visible in the image.
+> The system automatically detects the template (113.52mm × 180.41mm) and uses it for calibration.
+> **Fallback:** If the template isn't detected, place a **5-rupee coin** (23mm diameter) in the frame for calibration.
 
 ## 📊 Model Performance
 

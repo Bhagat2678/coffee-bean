@@ -41,3 +41,10 @@ Thumbs.db
 
 # Database
 *.db
+
+# Temporary and packaging files
+session_state.json
+*.zip
+results/results/*.log
+results/results/*.jpg
+

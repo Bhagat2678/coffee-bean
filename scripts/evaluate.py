@@ -1,12 +1,21 @@
+"""
+Module: evaluate.py
+Description: Evaluate a trained YOLO model on the validation set.
+             Computes per-image TP/FP/FN analysis and overall metrics.
+
+Usage:
+    python scripts/evaluate.py <model_path> <data_yaml> [conf]
+"""
+
 import os
 import sys
 import yaml
 import json
+import cv2
 from ultralytics import YOLO
 import numpy as np
 
-# Usage: python evaluate_model.py <model_path> <data_yaml> [conf]
-model_path = sys.argv[1] if len(sys.argv) > 1 else 'models/runs_detect_runs_coffee_beans_detection_v1_weights_best.pt'
+model_path = sys.argv[1] if len(sys.argv) > 1 else 'models/best.pt'
 data_yaml = sys.argv[2] if len(sys.argv) > 2 else 'datasets/coffee_beans.yaml'
 conf = float(sys.argv[3]) if len(sys.argv) > 3 else 0.01
 
@@ -72,7 +81,6 @@ for img_path in img_files:
                     # YOLO format x_center y_center w h (relative)
                     x_c = float(parts[1]); y_c = float(parts[2]); w_rel = float(parts[3]); h_rel = float(parts[4])
                     # read image size
-                    import cv2
                     img = cv2.imread(img_path)
                     h_img, w_img = img.shape[:2]
                     x1 = int((x_c - w_rel/2.0) * w_img)

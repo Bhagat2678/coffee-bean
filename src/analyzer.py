@@ -18,7 +18,7 @@ class BeanAnalyzer:
         
         Args:
             detector (ObjectDetector): YOLOv8 detector instance.
-                                      If None, creates default nano model.
+            If None, creates default nano model.
         """
         self.detector = detector or ObjectDetector("yolov8n.pt")
     

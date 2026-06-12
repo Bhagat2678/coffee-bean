@@ -15,6 +15,9 @@ class ObjectDetector:
     """
     YOLOv8-based object detector for counting and classifying objects in images.
     """
+
+    TEMPLATE_WIDTH_MM = 113.52
+    TEMPLATE_HEIGHT_MM = 180.41
     
     def __init__(self, model_path="yolov8n.pt"):
         """
@@ -114,6 +117,128 @@ class ObjectDetector:
             y2_new = y2
         
         return [x1_new, y1_new, x2_new, y2_new]
+
+    def _detect_template_contour(self, image):
+        """Return the dominant white template contour, or None if unavailable."""
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image.copy()
+
+        _, white_mask = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10))
+        white_mask = cv2.dilate(white_mask, kernel, iterations=3)
+        white_mask = cv2.erode(white_mask, kernel, iterations=1)
+
+        contours, _ = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None
+
+        largest_contour = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(largest_contour)
+        img_area = image.shape[0] * image.shape[1]
+        if area < img_area * 0.20:
+            return None
+
+        x, y, w, h = cv2.boundingRect(largest_contour)
+        aspect_ratio = float(max(w, h)) / float(min(w, h))
+        if aspect_ratio < 1.1 or aspect_ratio > 1.7:
+            return None
+
+        return largest_contour
+
+    @staticmethod
+    def _order_points(points):
+        """Order 4 points as top-left, top-right, bottom-right, bottom-left."""
+        rect = np.zeros((4, 2), dtype=np.float32)
+        point_sums = points.sum(axis=1)
+        point_diffs = np.diff(points, axis=1)
+
+        rect[0] = points[np.argmin(point_sums)]
+        rect[2] = points[np.argmax(point_sums)]
+        rect[1] = points[np.argmin(point_diffs)]
+        rect[3] = points[np.argmax(point_diffs)]
+        return rect
+
+    def _detect_a5_template(self, image):
+        """
+        Detect the white calibration template/background in the image.
+        The template is approximately 113.52mm × 180.41mm in the current setup.
+        
+        Returns:
+            tuple: (x1, y1, x2, y2) of detected template, or None if not found
+        """
+        largest_contour = self._detect_template_contour(image)
+        if largest_contour is None:
+            return None
+
+        # Get bounding rectangle of the template
+        x, y, w, h = cv2.boundingRect(largest_contour)
+
+        return (x, y, x + w, y + h)
+
+    def _calibrate_from_a5_template(self, image):
+        """
+        Calibrate pixel-to-mm ratio using the white template.
+        Template dimensions: 113.52mm (width) × 180.41mm (height)
+        
+        Returns:
+            float: pixels_per_mm calibration factor, or None if template not found
+        """
+        template_box = self._detect_a5_template(image)
+        if template_box is None:
+            return None
+        
+        x1, y1, x2, y2 = template_box
+        template_width_px = max(1, x2 - x1)
+        template_height_px = max(1, y2 - y1)
+
+        # Template dimensions in mm
+        template_width_mm = self.TEMPLATE_WIDTH_MM
+        template_height_mm = self.TEMPLATE_HEIGHT_MM
+
+        # Determine if template is in portrait (height > width) or landscape.
+        if template_height_px > template_width_px:
+            # Portrait orientation: height = 180.41mm, width = 113.52mm
+            pixels_per_mm_y = template_height_px / template_height_mm
+            pixels_per_mm_x = template_width_px / template_width_mm
+        else:
+            # Landscape orientation: height = 113.52mm, width = 180.41mm
+            pixels_per_mm_y = template_height_px / template_width_mm
+            pixels_per_mm_x = template_width_px / template_height_mm
+
+        # Use average of x/y for backward compatibility, but keep the axes.
+        pixels_per_mm = (pixels_per_mm_x + pixels_per_mm_y) / 2.0
+
+        print(
+            f"   [SIZE] White template detected: {template_width_px}x{template_height_px}px, "
+            f"pixels_per_mm={pixels_per_mm:.2f} (x={pixels_per_mm_x:.2f}, y={pixels_per_mm_y:.2f})"
+        )
+
+        return {
+            'x': pixels_per_mm_x,
+            'y': pixels_per_mm_y,
+            'avg': pixels_per_mm,
+        }
+
+    @staticmethod
+    def _direction_angle_from_contour(contour):
+        """
+        Estimate the major-axis direction angle in degrees for a contour.
+        Returns an angle in image coordinates, measured counterclockwise from +x.
+        """
+        pts = contour.reshape(-1, 2).astype(np.float32)
+        if len(pts) < 5:
+            return 0.0
+
+        mean, eigenvectors = cv2.PCACompute(pts, mean=None, maxComponents=2)
+        if eigenvectors is None or len(eigenvectors) == 0:
+            return 0.0
+
+        vx, vy = eigenvectors[0]
+        angle = float(np.degrees(np.arctan2(vy, vx)))
+        return angle
 
     def _color_name_from_hsv(self, h, s, v):
         """Map average HSV values to a readable color name (optimized for coffee beans)."""
@@ -241,6 +366,118 @@ class ObjectDetector:
             return 'non_bean'
 
         return 'coffee_bean'
+
+    def _estimate_size_mm(self, image, box, pixels_per_mm):
+        """
+        Estimate object dimensions in millimetres.
+
+        Tries to recover the bean silhouette inside the detection box so the
+        reported size is based on the object's shape, not just the padded box.
+        Falls back to the clipped box dimensions if contour extraction fails.
+        """
+        ppm_x = None
+        ppm_y = None
+        if isinstance(pixels_per_mm, dict):
+            ppm_x = float(pixels_per_mm.get('x') or pixels_per_mm.get('avg') or 0)
+            ppm_y = float(pixels_per_mm.get('y') or pixels_per_mm.get('avg') or 0)
+            ppm_avg = float(pixels_per_mm.get('avg') or 0)
+        else:
+            ppm_avg = float(pixels_per_mm or 0)
+            ppm_x = ppm_avg
+            ppm_y = ppm_avg
+
+        if ppm_avg <= 0:
+            return None
+
+        x1, y1, x2, y2 = map(int, box)
+        h, w = image.shape[:2]
+        x1 = max(0, min(x1, w - 1))
+        x2 = max(0, min(x2, w))
+        y1 = max(0, min(y1, h - 1))
+        y2 = max(0, min(y2, h))
+
+        bw = max(1, x2 - x1)
+        bh = max(1, y2 - y1)
+
+        roi = image[y1:y2, x1:x2]
+        if roi.size == 0:
+            short_mm = float(round(min(bw / max(ppm_x, 1e-6), bh / max(ppm_y, 1e-6)), 1))
+            long_mm = float(round(max(bw / max(ppm_x, 1e-6), bh / max(ppm_y, 1e-6)), 1))
+            return {'width': short_mm, 'height': long_mm}
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        masks = []
+        try:
+            _, bean_mask = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            masks.append(bean_mask)
+        except Exception:
+            pass
+
+        try:
+            adaptive = cv2.adaptiveThreshold(
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 7
+            )
+            masks.append(adaptive)
+        except Exception:
+            pass
+
+        try:
+            lab = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)
+            warmth = lab[:, :, 1].astype(np.int16) + lab[:, :, 2].astype(np.int16)
+            warm_threshold = np.percentile(warmth, 60)
+            warm_mask = (warmth > warm_threshold).astype(np.uint8) * 255
+            masks.append(warm_mask)
+        except Exception:
+            pass
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        best_contour = None
+        best_area = 0.0
+        roi_area = float(max(1, bw * bh))
+
+        for mask in masks:
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                area = float(cv2.contourArea(cnt))
+                if area < 10.0:
+                    continue
+                area_ratio = area / roi_area
+                if area_ratio < 0.03 or area_ratio > 0.98:
+                    continue
+                if area > best_area:
+                    best_area = area
+                    best_contour = cnt
+
+        if best_contour is not None:
+            rect = cv2.minAreaRect(best_contour)
+            rect_w, rect_h = rect[1]
+            if rect_w > 1 and rect_h > 1:
+                major_px = max(rect_w, rect_h)
+                minor_px = min(rect_w, rect_h)
+                major_angle = self._direction_angle_from_contour(best_contour)
+                minor_angle = major_angle + 90.0
+
+                def _axis_mm(length_px, angle_deg):
+                    angle_rad = np.radians(angle_deg)
+                    effective = np.sqrt(
+                        (np.cos(angle_rad) / max(ppm_x, 1e-6)) ** 2 +
+                        (np.sin(angle_rad) / max(ppm_y, 1e-6)) ** 2
+                    )
+                    return length_px * effective
+
+                major_mm = _axis_mm(major_px, major_angle)
+                minor_mm = _axis_mm(minor_px, minor_angle)
+                short_mm = float(round(min(minor_mm, major_mm), 1))
+                long_mm = float(round(max(minor_mm, major_mm), 1))
+                return {'width': short_mm, 'height': long_mm}
+
+        short_mm = float(round(min(bw / max(ppm_x, 1e-6), bh / max(ppm_y, 1e-6)), 1))
+        long_mm = float(round(max(bw / max(ppm_x, 1e-6), bh / max(ppm_y, 1e-6)), 1))
+        return {'width': short_mm, 'height': long_mm}
     
     def _is_likely_coin(self, box, color_info, image_shape, all_boxes=None):
         """
@@ -258,11 +495,12 @@ class ObjectDetector:
         gray_std = float(color_info.get('gray_std', 999))
         box_area = float(bw * bh)
 
-        # Coins are round → near-square bounding box (aspect ratio 0.7 - 1.4)
-        is_squarish = 0.7 <= aspect <= 1.4
+        # Coins are round → near-square bounding box.
+        # Keep this narrow so bean-like blobs do not get promoted to coin.
+        is_squarish = 0.85 <= aspect <= 1.18
 
         # Coins are metallic: low saturation, moderate-to-high brightness
-        is_metallic = (s_mean < 60 and v_mean > 80)
+        is_metallic = (s_mean < 35 and v_mean > 100)
 
         # Coins have uniform texture (low standard deviation in grayscale)
         is_uniform = gray_std < 40
@@ -272,15 +510,15 @@ class ObjectDetector:
         if all_boxes and len(all_boxes) > 2:
             areas = [float(max(1, b[2]-b[0]) * max(1, b[3]-b[1])) for b in all_boxes]
             median_area = sorted(areas)[len(areas) // 2]
-            if box_area > median_area * 1.5:
+            if box_area > median_area * 2.0:
                 is_larger = True
 
-        # Need at least squarish shape + one of (metallic color, uniform texture, larger size)
-        if is_squarish and (is_metallic or (is_uniform and is_larger)):
+        # Need a tight combination of coin-like geometry, color, texture, and size.
+        if is_squarish and is_metallic and is_uniform and is_larger:
             return True
 
-        # Strong metallic signal + uniform → coin even if not perfectly square
-        if is_metallic and is_uniform and v_mean > 120 and s_mean < 30:
+        # Very strong metallic signal on a large, uniform, near-square object.
+        if is_squarish and is_metallic and is_uniform and is_larger and v_mean > 140:
             return True
 
         return False
@@ -661,6 +899,11 @@ class ObjectDetector:
                        debug=False):
         """
         Detect objects in an image and count them by class with extra post-processing.
+        
+        **SIZE CALIBRATION (WHITE TEMPLATE)**
+        For accurate bean size measurements, ensure the image includes the white calibration template/background.
+        The template (113.52mm × 180.41mm) is used to automatically calibrate pixel-to-mm conversions.
+        If no template is detected, the system falls back to coin detection (if available).
 
         Args:
             image_path (str): Path to the input image.
@@ -677,7 +920,9 @@ class ObjectDetector:
             debug (bool): If True, print per-detection filtering decisions.
 
         Returns:
-            dict: Detection results with filtered counts and boxes.
+            dict: Detection results with filtered counts, boxes, and calibrated size measurements.
+                  'pixels_per_mm': Calibration factor derived from the template or coin.
+                  'size_mm': Each detection includes {'width': mm, 'height': mm} when calibrated.
         """
 
         image = cv2.imread(image_path)
@@ -798,9 +1043,14 @@ class ObjectDetector:
         enriched_detections = []
         bean_count = 0
         non_bean_count = 0
-        # Known model classes that are coffee beans (including defective beans)
-        BEAN_CLASSES = {'black', 'broken', 'green', 'immature', 'infested', 'sour'}
-        # Everything else (foreign, fraghusk, husk, coin, etc.) is non_bean
+        # Explicitly mark these as NON-BEANS (foreign matter, debris, etc.).
+        # Bean-like defect classes stay counted as coffee beans and are tracked
+        # separately through defect_type for grading/reporting.
+        NON_BEAN_CLASSES = {
+            'foreign', 'husk', 'fraghusk', 'debris', 'dust', 'fiber', 'leaf',
+            'stick', 'wood', 'stone', 'glass', 'metal', 'plastic', 'contamination',
+            'coin',
+        }
 
         color_distribution = {}
         all_boxes = [det['box'] for det in final_detections]
@@ -813,11 +1063,13 @@ class ObjectDetector:
             if self._is_likely_coin(det_copy['box'], color_info, image.shape, all_boxes):
                 object_type = 'non_bean'
                 model_class = 'coin'
-            # Use model's class label to determine bean vs non-bean
-            elif model_class in BEAN_CLASSES:
-                object_type = 'coffee_bean'
+            # Use NON_BEAN_CLASSES as a conservative blacklist. If a detector
+            # label is suspicious but still bean-like, keep it counted as a bean.
+            elif model_class in NON_BEAN_CLASSES:
+                object_type = self._classify_object_type(det_copy['box'], color_info)
             else:
-                object_type = 'non_bean'
+                # Default to coffee_bean (includes all defect types: black, broken, etc.)
+                object_type = 'coffee_bean'
 
             det_copy['object_type'] = object_type
             det_copy['defect_type'] = model_class  # preserve original model label
@@ -843,42 +1095,64 @@ class ObjectDetector:
         bean_count = sum(1 for d in enriched_detections if d.get('object_type') == 'coffee_bean')
         non_bean_count = sum(1 for d in enriched_detections if d.get('object_type') != 'coffee_bean')
 
-        # --- Size estimation using 5 rupee coin as reference (23mm diameter) ---
-        COIN_DIAMETER_MM = 23.0
+        # --- Size estimation: Use template (primary) or coin (fallback) for calibration ---
         pixels_per_mm = None
+        pixels_per_mm_x = None
+        pixels_per_mm_y = None
+        
+        # Try template calibration first (more reliable and always present)
+        calibration = self._calibrate_from_a5_template(image)
 
-        # Find the coin detection to calibrate pixel-to-mm ratio
+        if isinstance(calibration, dict):
+            pixels_per_mm = calibration.get('avg')
+            pixels_per_mm_x = calibration.get('x')
+            pixels_per_mm_y = calibration.get('y')
+        else:
+            pixels_per_mm = calibration
+        
+        # Fallback to coin calibration if template not found
+        if pixels_per_mm is None:
+            COIN_DIAMETER_MM = 23.0
+            for det in enriched_detections:
+                if det.get('defect_type') == 'coin':
+                    x1, y1, x2, y2 = det['box']
+                    coin_w = max(1, x2 - x1)
+                    coin_h = max(1, y2 - y1)
+                    coin_pixel_diameter = (coin_w + coin_h) / 2.0  # average of width and height
+                    pixels_per_mm = coin_pixel_diameter / COIN_DIAMETER_MM
+                    pixels_per_mm_x = pixels_per_mm
+                    pixels_per_mm_y = pixels_per_mm
+                    print(f"   [SIZE] Coin found (fallback): {coin_w}x{coin_h}px, pixels_per_mm={pixels_per_mm:.2f}")
+                    break
+        
+        # Debug: Show what classes were detected
+        detected_classes = {}
         for det in enriched_detections:
-            if det.get('defect_type') == 'coin':
-                x1, y1, x2, y2 = det['box']
-                coin_w = max(1, x2 - x1)
-                coin_h = max(1, y2 - y1)
-                coin_pixel_diameter = (coin_w + coin_h) / 2.0  # average of width and height
-                pixels_per_mm = coin_pixel_diameter / COIN_DIAMETER_MM
-                print(f"   [SIZE] Coin found: {coin_w}x{coin_h}px, pixels_per_mm={pixels_per_mm:.2f}")
-                break
+            defect_type = det.get('defect_type', 'unknown').lower()
+            detected_classes[defect_type] = detected_classes.get(defect_type, 0) + 1
+        
+        if debug:
+            print(f"   [DEBUG] Detected classes: {detected_classes}")
+            print(f"   [DEBUG] Bean/non-bean split: beans={bean_count}, non_beans={non_bean_count}")
 
         # Calculate size in mm for each detection
         bean_sizes = []
         for det in enriched_detections:
-            x1, y1, x2, y2 = det['box']
-            bw = max(1, x2 - x1)
-            bh = max(1, y2 - y1)
-            if pixels_per_mm and pixels_per_mm > 0:
-                width_mm = round(bw / pixels_per_mm, 1)
-                height_mm = round(bh / pixels_per_mm, 1)
-                det['size_mm'] = {'width': width_mm, 'height': height_mm}
-                if det.get('object_type') == 'coffee_bean':
-                    bean_sizes.append((width_mm, height_mm))
-            else:
-                det['size_mm'] = None
+            size_mm = self._estimate_size_mm(
+                image,
+                det['box'],
+                {'x': pixels_per_mm_x, 'y': pixels_per_mm_y, 'avg': pixels_per_mm} if pixels_per_mm_x and pixels_per_mm_y else pixels_per_mm,
+            )
+            det['size_mm'] = size_mm
+            if size_mm and det.get('object_type') == 'coffee_bean':
+                bean_sizes.append((size_mm['width'], size_mm['height']))
 
         # Compute average bean size
         avg_bean_size = None
         if bean_sizes:
             avg_w = round(sum(s[0] for s in bean_sizes) / len(bean_sizes), 1)
             avg_h = round(sum(s[1] for s in bean_sizes) / len(bean_sizes), 1)
-            avg_bean_size = {'width': avg_w, 'height': avg_h}
+            avg_bean_size = {'width': float(avg_w), 'height': float(avg_h)}
             print(f"   [SIZE] Average bean size: {avg_w}mm x {avg_h}mm")
 
         total_count = len(enriched_detections)
@@ -958,6 +1232,8 @@ class ObjectDetector:
             'detection_source': detection_source,
             'avg_bean_size_mm': avg_bean_size,
             'pixels_per_mm': round(pixels_per_mm, 2) if pixels_per_mm else None,
+            'pixels_per_mm_x': round(pixels_per_mm_x, 2) if pixels_per_mm_x else None,
+            'pixels_per_mm_y': round(pixels_per_mm_y, 2) if pixels_per_mm_y else None,
         }
 
     def get_model_info(self):

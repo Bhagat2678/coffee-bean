@@ -9,7 +9,7 @@ import cv2
 # Ensure project root is importable
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if ROOT not in sys.path:
-    sys.path.append(ROOT)
+    sys.path.insert(0, ROOT)
 
 from src.detector import ObjectDetector
 from src.grading import (
@@ -214,6 +214,8 @@ def analyze():
         'grade': grade_info,
         'size_stats': size_stats,
         'pixels_per_mm': pixels_per_mm,
+        'pixels_per_mm_x': front_result.get('pixels_per_mm_x'),
+        'pixels_per_mm_y': front_result.get('pixels_per_mm_y'),
     }
 
     # Back image fields

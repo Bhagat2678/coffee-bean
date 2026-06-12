@@ -1,0 +1,57 @@
+==================================================
+COFFEE BEAN CLASSIFIER - PACKAGE MANIFEST
+Generated: 2026-06-04 14:28:49
+==================================================
+
+INCLUDED FILES (28):
+  .gitignore                                                   0.5 KB
+  README.md                                                    6.2 KB
+  Techstack.md                                                 0.4 KB
+  data/output/.gitkeep                                         0.1 KB
+  data/raw/.gitkeep                                            0.1 KB
+  database/schema.sql                                         17.0 KB
+  datasets/consolidated/dataset.yaml                           0.4 KB
+  main.py                                                      3.6 KB
+  models/best.pt                                            6126.4 KB
+  requirements.txt                                             0.3 KB
+  results/.gitkeep                                             0.1 KB
+  scripts/add_dataset.py                                       7.0 KB
+  scripts/evaluate.py                                          5.6 KB
+  scripts/infer.py                                             9.3 KB
+  scripts/train.py                                             3.1 KB
+  session_state.json                                           0.4 KB
+  src/__init__.py                                              0.1 KB
+  src/analyzer.py                                             10.0 KB
+  src/arcface.py                                              11.3 KB
+  src/cvat_converter.py                                        8.4 KB
+  src/detector.py                                             40.0 KB
+  src/grading.py                                               9.9 KB
+  src/shape_analyzer.py                                       14.5 KB
+  website/app.py                                               8.5 KB
+  website/static/css/style.css                                26.1 KB
+  website/static/js/app.js                                    19.7 KB
+  website/templates/index.html                                16.3 KB
+  website/uploads/.gitkeep                                     0.1 KB
+
+TOTAL SIZE: 6.20 MB
+
+EXCLUDED (intentionally):
+  - All image/video files (*.jpg, *.png, *.mp4, etc.)
+  - Virtual environments (.venv/, venv/, env/)
+  - Training run artifacts (runs/)
+  - __pycache__/ and *.pyc files
+  - Git history (.git/)
+  - Phase1.docx, What_is_YOLO.docx (old docs)
+  - Jupyter notebook checkpoints
+
+MODEL STATUS:
+  models/best.pt              -> EXISTS
+  models/coffee_classifier.pt -> MISSING (train first)
+
+READY TO TRAIN: YES
+  Run: python scripts/train.py
+
+READY TO RUN (web app): YES
+  Run: python website/app.py
+  Open: http://localhost:5000
+==================================================

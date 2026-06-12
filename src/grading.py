@@ -30,7 +30,12 @@ GRADE_THRESHOLDS = [
 ]
 
 # Defect classes that the YOLO model can report
-DEFECT_CLASSES = {"black", "broken", "foreign", "immature", "infested", "sour", "overfermented", "moldy"}
+# These are actual defects/problems on COFFEE BEANS
+# Note: "foreign" objects are not beans, they're classified as non-beans (not defects)
+DEFECT_CLASSES = {"black", "broken", "immature", "infested", "sour", 
+                 "overfermented", "moldy", "defective", "damaged", 
+                 "fermented", "underripe", "premature", "fungal", "diseased",
+                 "infected"}
 
 
 # ── Screen Grading ─────────────────────────────────────────────────────────
@@ -175,6 +180,10 @@ def classify_grade(detections, bean_count=None):
     defect_breakdown = {}
     defect_count = 0
     for det in detections:
+        # Only count defects for actual coffee beans (not non-beans)
+        if det.get("object_type") != "coffee_bean" and det.get("class") != "coffee_bean":
+            continue
+        
         defect_type = (det.get("defect_type") or "").lower()
         if defect_type in DEFECT_CLASSES:
             defect_count += 1
