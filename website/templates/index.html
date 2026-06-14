@@ -136,7 +136,8 @@
               </div>
               <p class="drop-text-sm">Drop front-side image</p>
               <p class="drop-hint-sm">or click to browse</p>
-              <label class="upload-btn-sm"><input id="fileFront" type="file" accept="image/png, image/jpeg" hidden>Choose</label>
+              <label class="upload-btn-sm" for="fileFront">Choose</label>
+              <input id="fileFront" type="file" accept="image/png, image/jpeg" hidden>
             </div>
             <div id="preview-front" class="preview-mini hidden">
               <img id="preview-front-img" src="#" alt="Front preview" />
@@ -156,7 +157,8 @@
               </div>
               <p class="drop-text-sm">Drop back-side image</p>
               <p class="drop-hint-sm">or click to browse</p>
-              <label class="upload-btn-sm"><input id="fileBack" type="file" accept="image/png, image/jpeg" hidden>Choose</label>
+              <label class="upload-btn-sm" for="fileBack">Choose</label>
+              <input id="fileBack" type="file" accept="image/png, image/jpeg" hidden>
             </div>
             <div id="preview-back" class="preview-mini hidden">
               <img id="preview-back-img" src="#" alt="Back preview" />
@@ -256,6 +258,10 @@
               <div class="stat-value" id="avgBeanSize">--</div>
               <div class="stat-label">Avg Bean Size (mm)</div>
             </div>
+            <div class="stat-card">
+              <div class="stat-value" id="avgBeanLength">--</div>
+              <div class="stat-label">Avg Bean Length (mm)</div>
+            </div>
           </div>
 
           <!-- Grade Badge -->
@@ -263,7 +269,7 @@
             <div class="grade-badge" id="gradeValue">--</div>
             <div class="grade-details">
               <span class="grade-label" id="gradeLabel">--</span>
-              <span class="grade-defects" id="gradeDefects">--</span>
+              <!-- defect count intentionally hidden -->
             </div>
           </div>
 
@@ -324,10 +330,12 @@
           </div>
 
           <!-- Abnormality / Defect Breakdown -->
+          <!-- Abnormality / Defect Breakdown (hidden temporarily)
           <div id="defectSection" class="defect-section hidden">
             <div class="section-title">Abnormalities / Defect Breakdown</div>
             <div id="defectBreakdown" class="defect-breakdown"></div>
           </div>
+          -->
 
           <!-- Color Distribution -->
           <div class="color-dist" id="colorDist"></div>

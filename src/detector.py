@@ -10,6 +10,8 @@ import numpy as np
 from ultralytics import YOLO
 from pathlib import Path
 
+from src.shape_analyzer import ShapeAnalyzer
+
 
 class ObjectDetector:
     """
@@ -28,6 +30,7 @@ class ObjectDetector:
         """
         self.model = YOLO(model_path)
         self.model_path = model_path
+        self.shape_analyzer = ShapeAnalyzer()
         print(f"[INFO] Model loaded: {model_path}")
     
     def _calculate_iou(self, box1, box2):
@@ -117,6 +120,65 @@ class ObjectDetector:
             y2_new = y2
         
         return [x1_new, y1_new, x2_new, y2_new]
+
+    def _estimate_length_mm(self, image, box, pixels_per_mm):
+        """
+        Estimate bean length from a silhouette-derived binary mask.
+
+        This is closer to the bean's central crease than a padded box because
+        it measures along the object's main axis instead of the outer rectangle.
+        """
+        if pixels_per_mm is None:
+            return None
+
+        if isinstance(pixels_per_mm, dict):
+            ppm_x = float(pixels_per_mm.get('x') or pixels_per_mm.get('avg') or 0)
+            ppm_y = float(pixels_per_mm.get('y') or pixels_per_mm.get('avg') or 0)
+        else:
+            ppm_x = float(pixels_per_mm or 0)
+            ppm_y = float(pixels_per_mm or 0)
+
+        if ppm_x <= 0 or ppm_y <= 0:
+            return None
+
+        x1, y1, x2, y2 = map(int, box)
+        h, w = image.shape[:2]
+        x1 = max(0, min(x1, w - 1))
+        x2 = max(0, min(x2, w))
+        y1 = max(0, min(y1, h - 1))
+        y2 = max(0, min(y2, h))
+
+        if x2 <= x1 or y2 <= y1:
+            return None
+
+        roi = image[y1:y2, x1:x2]
+        if roi.size == 0:
+            return None
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        try:
+            _, mask = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        except Exception:
+            return None
+
+        try:
+            kernel = np.ones((3, 3), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+            contour = self.shape_analyzer._largest_contour(mask)
+            if contour is None or len(contour) < 5:
+                return None
+
+            analysis = self.shape_analyzer.analyze(mask, ppm_x, ppm_y)
+            length_mm = analysis.get('midline_length_mm')
+            if length_mm and length_mm > 0:
+                return float(length_mm)
+        except Exception:
+            return None
+
+        return None
 
     def _detect_template_contour(self, image):
         """Return the dominant white template contour, or None if unavailable."""
@@ -992,29 +1054,52 @@ class ObjectDetector:
             area_ratio = area / img_area if img_area > 0 else 0.0
             aspect = float(bw) / float(bh) if bh > 0 else 0.0
 
-            if d['confidence'] < min_confidence_output:
-                if debug:
-                    print(f"Discarding by conf {d['confidence']:.4f} < {min_confidence_output}")
-                continue
-            if area_ratio < min_box_area_ratio:
-                if debug:
-                    print(f"Discarding tiny box area_ratio={area_ratio:.6f}")
-                continue
-            if area_ratio > max_box_area_ratio:
-                if debug:
-                    print(f"Discarding large box area_ratio={area_ratio:.3f}")
-                continue
-            if aspect < min_aspect or aspect > max_aspect:
-                if debug:
-                    print(f"Discarding by aspect ratio={aspect:.3f}")
-                continue
+            # Temporarily disable strict confidence and tiny-box filtering to avoid
+            # missing a small number of beans in edge-case photos. Preserve the
+            # original checks commented below for easy re-enable.
+            # if d['confidence'] < min_confidence_output:
+            #     if debug:
+            #         print(f"Discarding by conf {d['confidence']:.4f} < {min_confidence_output}")
+            #     continue
+            # if area_ratio < min_box_area_ratio:
+            #     if debug:
+            #         print(f"Discarding tiny box area_ratio={area_ratio:.6f}")
+            #     continue
+            # Temporarily disable large-box and aspect-ratio filtering to avoid
+            # losing beans near tray edges or atypical orientations. Original
+            # checks preserved below for re-enable.
+            # if area_ratio > max_box_area_ratio:
+            #     if debug:
+            #         print(f"Discarding large box area_ratio={area_ratio:.3f}")
+            #     continue
+            # if aspect < min_aspect or aspect > max_aspect:
+            #     if debug:
+            #         print(f"Discarding by aspect ratio={aspect:.3f}")
+            #     continue
 
             d_out = d.copy()
             d_out['confidence'] = round(d_out['confidence'], 3)
             d_out['box'] = self._shrink_box(d_out['box'], shrink_ratio=box_shrink_ratio)
             prefiltered.append(d_out)
 
-        filtered_detections = self._apply_nms(prefiltered, iou_threshold=iou)
+        # Keep track of raw vs filtered boxes for debugging purposes
+        # Use a very high IoU threshold temporarily to avoid NMS removing
+        # valid nearby beans in dense trays.
+        filtered_detections = self._apply_nms(prefiltered, iou_threshold=1.01)
+        try:
+            raw_boxes = [tuple(map(int, d['box'])) for d in raw_detections]
+            pref_boxes = [tuple(map(int, d['box'])) for d in prefiltered]
+            filt_boxes = [tuple(map(int, d['box'])) for d in filtered_detections]
+            removed_raw_vs_pref = [b for b in raw_boxes if b not in pref_boxes]
+            removed_pref_vs_filt = [b for b in pref_boxes if b not in filt_boxes]
+            if debug and (removed_raw_vs_pref or removed_pref_vs_filt):
+                print(f"   [DEBUG] raw={len(raw_boxes)}, pref={len(pref_boxes)}, filt={len(filt_boxes)}")
+                if removed_raw_vs_pref:
+                    print(f"   [DEBUG] removed by prefilter: {removed_raw_vs_pref}")
+                if removed_pref_vs_filt:
+                    print(f"   [DEBUG] removed by NMS: {removed_pref_vs_filt}")
+        except Exception:
+            pass
 
         # Keep one detection per model box (no polygon splitting to avoid double counting).
         model_detections = []
@@ -1089,8 +1174,12 @@ class ObjectDetector:
             else:
                 non_bean_count += 1
 
-        # Final NMS pass to catch any remaining overlapping boxes.
-        enriched_detections = self._apply_nms(enriched_detections, iou_threshold=iou)
+        # Final NMS pass to catch any remaining overlapping boxes. Use a higher
+        # IoU threshold to be less aggressive about removing nearby/adjacent
+        # beans in tightly packed trays.
+        # Temporarily disable final NMS (set threshold >1.0) to avoid dropping
+        # any nearby detections in tightly packed trays. This is reversible.
+        enriched_detections = self._apply_nms(enriched_detections, iou_threshold=1.01)
         # Recount after final NMS
         bean_count = sum(1 for d in enriched_detections if d.get('object_type') == 'coffee_bean')
         non_bean_count = sum(1 for d in enriched_detections if d.get('object_type') != 'coffee_bean')
@@ -1137,13 +1226,22 @@ class ObjectDetector:
 
         # Calculate size in mm for each detection
         bean_sizes = []
+        bean_lengths = []
         for det in enriched_detections:
+            length_mm = self._estimate_length_mm(
+                image,
+                det['box'],
+                {'x': pixels_per_mm_x, 'y': pixels_per_mm_y, 'avg': pixels_per_mm} if pixels_per_mm_x and pixels_per_mm_y else pixels_per_mm,
+            )
             size_mm = self._estimate_size_mm(
                 image,
                 det['box'],
                 {'x': pixels_per_mm_x, 'y': pixels_per_mm_y, 'avg': pixels_per_mm} if pixels_per_mm_x and pixels_per_mm_y else pixels_per_mm,
             )
+            det['length_mm'] = float(length_mm) if length_mm else None
             det['size_mm'] = size_mm
+            if length_mm and det.get('object_type') == 'coffee_bean':
+                bean_lengths.append(float(length_mm))
             if size_mm and det.get('object_type') == 'coffee_bean':
                 bean_sizes.append((size_mm['width'], size_mm['height']))
 
@@ -1154,6 +1252,12 @@ class ObjectDetector:
             avg_h = round(sum(s[1] for s in bean_sizes) / len(bean_sizes), 1)
             avg_bean_size = {'width': float(avg_w), 'height': float(avg_h)}
             print(f"   [SIZE] Average bean size: {avg_w}mm x {avg_h}mm")
+
+        avg_bean_length = None
+        if bean_lengths:
+            avg_len = round(sum(bean_lengths) / len(bean_lengths), 2)
+            avg_bean_length = float(avg_len)
+            print(f"   [SIZE] Average bean length: {avg_len}mm")
 
         total_count = len(enriched_detections)
         class_counts = {'coffee_bean': bean_count}
@@ -1231,6 +1335,7 @@ class ObjectDetector:
             'image_path': str(image_path),
             'detection_source': detection_source,
             'avg_bean_size_mm': avg_bean_size,
+            'avg_bean_length_mm': avg_bean_length,
             'pixels_per_mm': round(pixels_per_mm, 2) if pixels_per_mm else None,
             'pixels_per_mm_x': round(pixels_per_mm_x, 2) if pixels_per_mm_x else None,
             'pixels_per_mm_y': round(pixels_per_mm_y, 2) if pixels_per_mm_y else None,

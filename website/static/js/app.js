@@ -19,6 +19,7 @@ const objectCountEl = document.getElementById('objectCount')
 const beanCountEl = document.getElementById('beanCount')
 const nonBeanCountEl = document.getElementById('nonBeanCount')
 const avgBeanSizeEl = document.getElementById('avgBeanSize')
+const avgBeanLengthEl = document.getElementById('avgBeanLength')
 const procTimeEl = document.getElementById('procTime')
 const colorDistEl = document.getElementById('colorDist')
 const detectionsList = document.getElementById('detectionsList')
@@ -92,6 +93,7 @@ function resetStats() {
   beanCountEl.textContent = PLACEHOLDER
   nonBeanCountEl.textContent = PLACEHOLDER
   avgBeanSizeEl.textContent = PLACEHOLDER
+  avgBeanLengthEl.textContent = PLACEHOLDER
   procTimeEl.textContent = PLACEHOLDER
 }
 
@@ -200,16 +202,16 @@ function renderDetections(detections = []) {
     const colorName = d.color && d.color.name ? d.color.name : 'Unknown'
     const sizeInfo = d.size_mm
     const sizeStr = sizeInfo ? ` | ${sizeInfo.width}×${sizeInfo.height}mm` : ''
+    const lengthStr = d.length_mm ? ` | L=${Number(d.length_mm).toFixed(1)}mm` : ''
 
     const label = document.createElement('span')
     label.className = 'detection-text'
     if (d.defect_type === 'coin') {
       label.textContent = `${idx + 1}. Coin (reference)`
     } else {
-      label.textContent = `${idx + 1}. ${humanTypeLabel(type)} | ${colorName}${sizeStr}`
+      label.textContent = `${idx + 1}. ${humanTypeLabel(type)} | ${colorName}${sizeStr}${lengthStr}`
     }
 
-    item.appendChild(createColorSwatch(hex))
     item.appendChild(label)
     detectionsList.appendChild(item)
   })
@@ -221,9 +223,9 @@ function renderGrade(gradeData) {
   gradeBadge.classList.remove('hidden')
   gradeValue.textContent = gradeData.grade
   gradeLabel.textContent = gradeData.label
-  gradeDefects.textContent = `${gradeData.defect_count} defect${gradeData.defect_count !== 1 ? 's' : ''} (${gradeData.defect_percentage}%)`
+  // Defect text hidden temporarily
+  // gradeDefects.textContent = `${gradeData.defect_count} defect${gradeData.defect_count !== 1 ? 's' : ''} (${gradeData.defect_percentage}%)`
 
-  // Apply grade-specific color class
   gradeValue.className = 'grade-badge'
   const g = gradeData.grade.toLowerCase().replace(/\s+/g, '')
   gradeValue.classList.add(`grade-${g}`)
@@ -288,29 +290,31 @@ function renderScreenTable(screenData) {
 }
 
 function renderDefectBreakdown(gradeData) {
-  if (!gradeData || !defectSection || !defectBreakdown) return
-  const breakdown = gradeData.defect_breakdown || {}
-  const entries = Object.entries(breakdown)
-  if (!entries.length) return
-
-  defectSection.classList.remove('hidden')
-  defectBreakdown.innerHTML = ''
-
-  entries.sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
-    const chip = document.createElement('div')
-    const cssClass = type === 'black' ? 'defect-black'
-      : type === 'broken' ? 'defect-broken'
-      : type === 'foreign' ? 'defect-foreign'
-      : 'defect-default'
-    chip.className = `defect-chip ${cssClass}`
-
-    const pct = gradeData.total_beans > 0
-      ? ((count / gradeData.total_beans) * 100).toFixed(1)
-      : '0.0'
-
-    chip.textContent = `${type}: ${count} (${pct}%)`
-    defectBreakdown.appendChild(chip)
-  })
+  // Defect rendering temporarily disabled. Preserving original implementation
+  // so it can be re-enabled later.
+  // if (!gradeData || !defectSection || !defectBreakdown) return
+  // const breakdown = gradeData.defect_breakdown || {}
+  // const entries = Object.entries(breakdown)
+  // if (!entries.length) return
+  //
+  // defectSection.classList.remove('hidden')
+  // defectBreakdown.innerHTML = ''
+  //
+  // entries.sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
+  //   const chip = document.createElement('div')
+  //   const cssClass = type === 'black' ? 'defect-black'
+  //     : type === 'broken' ? 'defect-broken'
+  //     : type === 'foreign' ? 'defect-foreign'
+  //     : 'defect-default'
+  //   chip.className = `defect-chip ${cssClass}`
+  //
+  //   const pct = gradeData.total_beans > 0
+  //     ? ((count / gradeData.total_beans) * 100).toFixed(1)
+  //     : '0.0'
+  //
+  //   chip.textContent = `${type}: ${count} (${pct}%)`
+  //   defectBreakdown.appendChild(chip)
+  // })
 }
 
 function renderArcFace(data) {
@@ -395,8 +399,9 @@ function setupDropZone(dropEl, fileInput, side) {
   })
 
   dropEl.addEventListener('click', e => {
-    // Don't trigger if clicking the label/button itself
-    if (e.target.tagName === 'LABEL' || e.target.tagName === 'INPUT') return
+    if (e.target === fileInput || e.target.closest('label')) {
+      return
+    }
     fileInput.click()
   })
 
@@ -501,12 +506,20 @@ analyzeBtn.addEventListener('click', async () => {
       avgBeanSizeEl.textContent = 'No coin ref'
     }
 
+    // Average bean length
+    if (data.avg_bean_length_mm != null) {
+      avgBeanLengthEl.textContent = Number(data.avg_bean_length_mm).toFixed(2)
+    } else {
+      avgBeanLengthEl.textContent = '--'
+    }
+
     // New sections
     renderGrade(data.grade)
     renderDensity(data.density)
     renderSizeStats(data.size_stats)
     renderScreenTable(data.screen_distribution)
-    renderDefectBreakdown(data.grade)
+    // Defect breakdown rendering disabled for now
+    // renderDefectBreakdown(data.grade)
     renderColorDistribution(data.color_distribution || {})
     renderDetections(data.detections || [])
     renderArcFace(data)

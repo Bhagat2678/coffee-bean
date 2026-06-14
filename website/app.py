@@ -172,6 +172,7 @@ def analyze():
     grade_info = classify_grade(detections, bean_count)
     size_stats = compute_size_stats(detections, pixels_per_mm)
 
+
     # ── ArcFace front-back matching (if both images provided) ──
     arcface_pairs = []
     if upload_back and back_result:
@@ -206,6 +207,7 @@ def analyze():
         'detection_source': front_result.get('detection_source', 'model'),
         'color_distribution': front_result.get('color_distribution', {}),
         'avg_bean_size_mm': front_result.get('avg_bean_size_mm'),
+        'avg_bean_length_mm': front_result.get('avg_bean_length_mm'),
         'detections': detections,
         # New fields
         'sample_weight_g': sample_weight,

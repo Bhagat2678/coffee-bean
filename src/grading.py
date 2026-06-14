@@ -158,10 +158,12 @@ def compute_density(sample_weight_g, bean_count):
 
 def classify_grade(detections, bean_count=None):
     """
-    Assign a quality grade (AAA → C) based on defect count.
-
-    Defects are detected beans whose model label (defect_type) indicates
-    a problem: black, broken, foreign, etc.
+    Assign a quality grade (AAA → C) based on bean screen sizes (width in mm):
+    - AAA: Screen 19+ (width >= 7.50 mm)
+    - AA: Screen 18 (width >= 7.10 mm)
+    - A: Screen 17 (width >= 6.70 mm)
+    - B: Screen 15/16 (width >= 5.95 mm)
+    - C: Screen 13/14 or below (width < 5.95 mm)
 
     Args:
         detections (list[dict]): Enriched detections from the detector.
@@ -177,13 +179,17 @@ def classify_grade(detections, bean_count=None):
             if d.get("object_type") == "coffee_bean" or d.get("class") == "coffee_bean"
         )
 
+    # Count defects for diagnostic details (e.g. breakdown, UI stats)
     defect_breakdown = {}
     defect_count = 0
+    MIN_DEFECT_CONFIDENCE = 0.4
     for det in detections:
         # Only count defects for actual coffee beans (not non-beans)
         if det.get("object_type") != "coffee_bean" and det.get("class") != "coffee_bean":
             continue
-        
+        conf = float(det.get("confidence") or 0.0)
+        if conf < MIN_DEFECT_CONFIDENCE:
+            continue
         defect_type = (det.get("defect_type") or "").lower()
         if defect_type in DEFECT_CLASSES:
             defect_count += 1
@@ -191,17 +197,41 @@ def classify_grade(detections, bean_count=None):
 
     defect_pct = round((defect_count / bean_count) * 100, 2) if bean_count > 0 else 0.0
 
+    # Determine grade based on bean width (screen sizes)
+    bean_widths = []
+    for det in detections:
+        if det.get("object_type") != "coffee_bean" and det.get("class") != "coffee_bean":
+            continue
+        sm = det.get("size_mm")
+        if sm and sm.get("width") and sm.get("height"):
+            # Width is the smaller dimension of the bean
+            w = min(float(sm["width"]), float(sm["height"]))
+            bean_widths.append(w)
+
     grade = "C"
     label = "Commercial"
-    for entry in GRADE_THRESHOLDS:
-        if entry["max_defects"] is None:
-            grade = entry["grade"]
-            label = entry["label"]
-            break
-        if defect_count <= entry["max_defects"]:
-            grade = entry["grade"]
-            label = entry["label"]
-            break
+
+    if bean_widths:
+        avg_width = sum(bean_widths) / len(bean_widths)
+        if avg_width >= 7.50:
+            grade = "AAA"
+            label = "Specialty"
+        elif avg_width >= 7.10:
+            grade = "AA"
+            label = "Premium"
+        elif avg_width >= 6.70:
+            grade = "A"
+            label = "Good"
+        elif avg_width >= 5.95:
+            grade = "B"
+            label = "Fair / Average"
+        else:
+            grade = "C"
+            label = "Commercial"
+    else:
+        # Fallback if no calibration/size data is available
+        grade = "A"
+        label = "Good"
 
     return {
         "grade": grade,
@@ -211,6 +241,7 @@ def classify_grade(detections, bean_count=None):
         "defect_breakdown": defect_breakdown,
         "total_beans": bean_count,
     }
+
 
 
 # ── Size Statistics ────────────────────────────────────────────────────────
@@ -232,6 +263,7 @@ def compute_size_stats(detections, pixels_per_mm=None):
     widths = []
 
     for det in bean_dets:
+        length_mm = det.get("length_mm")
         sm = det.get("size_mm")
         if sm and sm.get("width") and sm.get("height"):
             w = float(sm["width"])
@@ -247,8 +279,9 @@ def compute_size_stats(detections, pixels_per_mm=None):
         else:
             continue
 
-        # Length = larger dimension, width = smaller
-        length = max(w, h)
+        # Prefer detector-provided crease/midline length when available.
+        # Fall back to the larger dimension of the size estimate if needed.
+        length = float(length_mm) if length_mm else max(w, h)
         width = min(w, h)
         lengths.append(length)
         widths.append(width)
