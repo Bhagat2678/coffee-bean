@@ -284,6 +284,88 @@ class ObjectDetector:
             'avg': pixels_per_mm,
         }
 
+    def _crop_to_white_template(self, image):
+        """Crop the input image to the detected white calibration plate."""
+        contour = self._detect_template_contour(image)
+        if contour is None:
+            return image, {
+                'applied': False,
+                'box': None,
+                'original_shape': {'height': image.shape[0], 'width': image.shape[1]},
+                'cropped_shape': {'height': image.shape[0], 'width': image.shape[1]},
+            }
+
+        x, y, w, h = cv2.boundingRect(contour)
+        x1 = max(0, x)
+        y1 = max(0, y)
+        x2 = min(image.shape[1], x + w)
+        y2 = min(image.shape[0], y + h)
+
+        if x2 <= x1 or y2 <= y1:
+            return image, {
+                'applied': False,
+                'box': None,
+                'original_shape': {'height': image.shape[0], 'width': image.shape[1]},
+                'cropped_shape': {'height': image.shape[0], 'width': image.shape[1]},
+            }
+
+        cropped = image[y1:y2, x1:x2].copy()
+        return cropped, {
+            'applied': True,
+            'box': [int(x1), int(y1), int(x2), int(y2)],
+            'original_shape': {'height': image.shape[0], 'width': image.shape[1]},
+            'cropped_shape': {'height': cropped.shape[0], 'width': cropped.shape[1]},
+        }
+
+    def _calibrate_from_cropped_plate(self, image, crop_info=None):
+        """
+        Calibrate using the fixed white plate dimensions after cropping.
+        Plate size is 180.41mm x 113.52mm; orientation is inferred from pixels.
+        """
+        if crop_info and not crop_info.get('applied'):
+            return None
+
+        plate_width_px = max(1, image.shape[1])
+        plate_height_px = max(1, image.shape[0])
+
+        if plate_height_px > plate_width_px:
+            pixels_per_mm_y = plate_height_px / self.TEMPLATE_HEIGHT_MM
+            pixels_per_mm_x = plate_width_px / self.TEMPLATE_WIDTH_MM
+            plate_width_mm = self.TEMPLATE_WIDTH_MM
+            plate_height_mm = self.TEMPLATE_HEIGHT_MM
+        else:
+            pixels_per_mm_y = plate_height_px / self.TEMPLATE_WIDTH_MM
+            pixels_per_mm_x = plate_width_px / self.TEMPLATE_HEIGHT_MM
+            plate_width_mm = self.TEMPLATE_HEIGHT_MM
+            plate_height_mm = self.TEMPLATE_WIDTH_MM
+
+        pixels_per_mm = (pixels_per_mm_x + pixels_per_mm_y) / 2.0
+        
+        # Compare measured plate aspect ratio (pixels) with expected physical aspect ratio
+        cropped_ratio = max(plate_width_px, plate_height_px) / min(plate_width_px, plate_height_px)
+        expected_ratio = self.TEMPLATE_HEIGHT_MM / self.TEMPLATE_WIDTH_MM
+        ratio_diff_percent = abs(cropped_ratio - expected_ratio) / expected_ratio * 100
+        print(
+            f"   [CALIBRATION] Aspect Ratio Comparison: Cropped Plate = {cropped_ratio:.3f}, "
+            f"Expected = {expected_ratio:.3f} (Diff: {ratio_diff_percent:.1f}%)"
+        )
+        
+        print(
+            f"   [SIZE] Cropped white plate: {plate_width_px}x{plate_height_px}px, "
+            f"plate={plate_width_mm:.2f}x{plate_height_mm:.2f}mm, "
+            f"pixels_per_mm={pixels_per_mm:.2f} (x={pixels_per_mm_x:.2f}, y={pixels_per_mm_y:.2f})"
+        )
+
+        return {
+            'x': pixels_per_mm_x,
+            'y': pixels_per_mm_y,
+            'avg': pixels_per_mm,
+            'plate_width_mm': plate_width_mm,
+            'plate_height_mm': plate_height_mm,
+            'plate_width_px': plate_width_px,
+            'plate_height_px': plate_height_px,
+        }
+
     @staticmethod
     def _direction_angle_from_contour(contour):
         """
@@ -540,50 +622,6 @@ class ObjectDetector:
         short_mm = float(round(min(bw / max(ppm_x, 1e-6), bh / max(ppm_y, 1e-6)), 1))
         long_mm = float(round(max(bw / max(ppm_x, 1e-6), bh / max(ppm_y, 1e-6)), 1))
         return {'width': short_mm, 'height': long_mm}
-    
-    def _is_likely_coin(self, box, color_info, image_shape, all_boxes=None):
-        """
-        Detect if a bounding box likely contains a coin rather than a coffee bean.
-        Uses shape (round/square), color (metallic), and relative size heuristics.
-        """
-        x1, y1, x2, y2 = map(int, box)
-        bw = max(1, x2 - x1)
-        bh = max(1, y2 - y1)
-        aspect = float(bw) / float(bh)
-
-        s_mean = float(color_info['hsv']['s'])
-        v_mean = float(color_info['hsv']['v'])
-        h_mean = float(color_info['hsv']['h'])
-        gray_std = float(color_info.get('gray_std', 999))
-        box_area = float(bw * bh)
-
-        # Coins are round → near-square bounding box.
-        # Keep this narrow so bean-like blobs do not get promoted to coin.
-        is_squarish = 0.85 <= aspect <= 1.18
-
-        # Coins are metallic: low saturation, moderate-to-high brightness
-        is_metallic = (s_mean < 35 and v_mean > 100)
-
-        # Coins have uniform texture (low standard deviation in grayscale)
-        is_uniform = gray_std < 40
-
-        # Coins are typically larger than individual beans
-        is_larger = False
-        if all_boxes and len(all_boxes) > 2:
-            areas = [float(max(1, b[2]-b[0]) * max(1, b[3]-b[1])) for b in all_boxes]
-            median_area = sorted(areas)[len(areas) // 2]
-            if box_area > median_area * 2.0:
-                is_larger = True
-
-        # Need a tight combination of coin-like geometry, color, texture, and size.
-        if is_squarish and is_metallic and is_uniform and is_larger:
-            return True
-
-        # Very strong metallic signal on a large, uniform, near-square object.
-        if is_squarish and is_metallic and is_uniform and is_larger and v_mean > 140:
-            return True
-
-        return False
 
     def _extract_polygon_from_box(self, image, box, debug=False):
         """
@@ -934,7 +972,6 @@ class ObjectDetector:
 
         # The custom bean model often emits low-confidence oversized boxes on hard images.
         poor_model = avg_conf < 0.12 or large_box_ratio > 0.30
-
         if poor_model:
             use_fallback = contour_count > 0
         else:
@@ -948,7 +985,7 @@ class ObjectDetector:
             )
 
         return use_fallback
-    
+
     def detect_objects(self, image_path, confidence_threshold=0.25, save_output=None,
                        iou=0.3,
                        min_confidence_output=0.25,
@@ -958,6 +995,7 @@ class ObjectDetector:
                        max_aspect=4.0,
                        box_shrink_ratio=0.15,
                        use_contour_fallback=False,
+                       manual_crop=False,
                        debug=False):
         """
         Detect objects in an image and count them by class with extra post-processing.
@@ -965,7 +1003,6 @@ class ObjectDetector:
         **SIZE CALIBRATION (WHITE TEMPLATE)**
         For accurate bean size measurements, ensure the image includes the white calibration template/background.
         The template (113.52mm × 180.41mm) is used to automatically calibrate pixel-to-mm conversions.
-        If no template is detected, the system falls back to coin detection (if available).
 
         Args:
             image_path (str): Path to the input image.
@@ -979,14 +1016,14 @@ class ObjectDetector:
             max_aspect (float): Maximum width/height ratio to keep.
             box_shrink_ratio (float): Shrink boxes by this ratio (0.15 = 15% from each side).
             use_contour_fallback (bool): If True, use contour segmentation when model quality is poor.
+            manual_crop (bool): If True, skip auto-cropping and calibrate using full image dimensions.
             debug (bool): If True, print per-detection filtering decisions.
 
         Returns:
             dict: Detection results with filtered counts, boxes, and calibrated size measurements.
-                  'pixels_per_mm': Calibration factor derived from the template or coin.
+                  'pixels_per_mm': Calibration factor derived from the template.
                   'size_mm': Each detection includes {'width': mm, 'height': mm} when calibrated.
         """
-
         image = cv2.imread(image_path)
         if image is None:
             print(f"Error: Could not read image from {image_path}")
@@ -998,10 +1035,24 @@ class ObjectDetector:
                 'detection_source': 'none',
             }
 
+        original_image_shape = {'height': image.shape[0], 'width': image.shape[1]}
+        if manual_crop:
+            crop_info = {
+                'applied': True,
+                'box': [0, 0, image.shape[1], image.shape[0]],
+                'original_shape': {'height': image.shape[0], 'width': image.shape[1]},
+                'cropped_shape': {'height': image.shape[0], 'width': image.shape[1]},
+            }
+        else:
+            image, crop_info = self._crop_to_white_template(image)
+
         h, w = image.shape[:2]
         img_area = float(w * h)
         if debug:
-            print(f"Image dims from cv2: h={h}, w={w}, img_area={img_area}")
+            print(
+                f"Image dims from cv2 after plate crop: h={h}, w={w}, "
+                f"img_area={img_area}, crop_applied={crop_info.get('applied')}"
+            )
 
         # Run model inference.
         results = self.model(image, conf=confidence_threshold, iou=iou)
@@ -1134,7 +1185,6 @@ class ObjectDetector:
         NON_BEAN_CLASSES = {
             'foreign', 'husk', 'fraghusk', 'debris', 'dust', 'fiber', 'leaf',
             'stick', 'wood', 'stone', 'glass', 'metal', 'plastic', 'contamination',
-            'coin',
         }
 
         color_distribution = {}
@@ -1144,13 +1194,9 @@ class ObjectDetector:
             color_info = self._extract_color_info(image, det_copy['box'])
             model_class = det.get('class', '').lower()
 
-            # Check if detection looks like a coin (override model class)
-            if self._is_likely_coin(det_copy['box'], color_info, image.shape, all_boxes):
-                object_type = 'non_bean'
-                model_class = 'coin'
             # Use NON_BEAN_CLASSES as a conservative blacklist. If a detector
             # label is suspicious but still bean-like, keep it counted as a bean.
-            elif model_class in NON_BEAN_CLASSES:
+            if model_class in NON_BEAN_CLASSES:
                 object_type = self._classify_object_type(det_copy['box'], color_info)
             else:
                 # Default to coffee_bean (includes all defect types: black, broken, etc.)
@@ -1184,13 +1230,12 @@ class ObjectDetector:
         bean_count = sum(1 for d in enriched_detections if d.get('object_type') == 'coffee_bean')
         non_bean_count = sum(1 for d in enriched_detections if d.get('object_type') != 'coffee_bean')
 
-        # --- Size estimation: Use template (primary) or coin (fallback) for calibration ---
+        # --- Size estimation: use the cropped white plate as the only calibration reference ---
         pixels_per_mm = None
         pixels_per_mm_x = None
         pixels_per_mm_y = None
         
-        # Try template calibration first (more reliable and always present)
-        calibration = self._calibrate_from_a5_template(image)
+        calibration = self._calibrate_from_cropped_plate(image, crop_info)
 
         if isinstance(calibration, dict):
             pixels_per_mm = calibration.get('avg')
@@ -1198,21 +1243,6 @@ class ObjectDetector:
             pixels_per_mm_y = calibration.get('y')
         else:
             pixels_per_mm = calibration
-        
-        # Fallback to coin calibration if template not found
-        if pixels_per_mm is None:
-            COIN_DIAMETER_MM = 23.0
-            for det in enriched_detections:
-                if det.get('defect_type') == 'coin':
-                    x1, y1, x2, y2 = det['box']
-                    coin_w = max(1, x2 - x1)
-                    coin_h = max(1, y2 - y1)
-                    coin_pixel_diameter = (coin_w + coin_h) / 2.0  # average of width and height
-                    pixels_per_mm = coin_pixel_diameter / COIN_DIAMETER_MM
-                    pixels_per_mm_x = pixels_per_mm
-                    pixels_per_mm_y = pixels_per_mm
-                    print(f"   [SIZE] Coin found (fallback): {coin_w}x{coin_h}px, pixels_per_mm={pixels_per_mm:.2f}")
-                    break
         
         # Debug: Show what classes were detected
         detected_classes = {}
@@ -1294,8 +1324,6 @@ class ObjectDetector:
                 label = f"{i+1}"
             elif class_name == 'coffee_bean':
                 label = f"{i+1}. {color_name}{size_str}"
-            elif det.get('defect_type') == 'coin':
-                label = f"{i+1}. Coin (ref)"
             else:
                 label = f"{i+1}. non_bean{size_str}"
             tx, ty = x1, max(0, y1 - 10)
@@ -1334,6 +1362,12 @@ class ObjectDetector:
             'detections': enriched_detections,
             'image_path': str(image_path),
             'detection_source': detection_source,
+            'crop': crop_info,
+            'original_image_shape': original_image_shape,
+            'plate_measurements_mm': {
+                'length': self.TEMPLATE_HEIGHT_MM,
+                'width': self.TEMPLATE_WIDTH_MM,
+            },
             'avg_bean_size_mm': avg_bean_size,
             'avg_bean_length_mm': avg_bean_length,
             'pixels_per_mm': round(pixels_per_mm, 2) if pixels_per_mm else None,

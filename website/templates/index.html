@@ -9,6 +9,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap"
     rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
@@ -96,7 +97,7 @@
           </div>
           <div class="tip">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/></svg>
-            Place a coin for size reference
+            Plate size: 180.41mm x 113.52mm
           </div>
           <div class="tip">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
@@ -143,6 +144,7 @@
               <img id="preview-front-img" src="#" alt="Front preview" />
               <button class="remove-btn" data-side="front" title="Remove">&times;</button>
             </div>
+            <button class="crop-btn-sm hidden" id="cropFrontBtn" data-side="front">Crop Image</button>
           </div>
 
           <!-- Back Image -->
@@ -164,6 +166,7 @@
               <img id="preview-back-img" src="#" alt="Back preview" />
               <button class="remove-btn" data-side="back" title="Remove">&times;</button>
             </div>
+            <button class="crop-btn-sm hidden" id="cropBackBtn" data-side="back">Crop Image</button>
           </div>
         </div>
 
@@ -269,7 +272,6 @@
             <div class="grade-badge" id="gradeValue">--</div>
             <div class="grade-details">
               <span class="grade-label" id="gradeLabel">--</span>
-              <!-- defect count intentionally hidden -->
             </div>
           </div>
 
@@ -320,6 +322,7 @@
                   <tr>
                     <th>Screen No.</th>
                     <th>Aperture (mm)</th>
+                    <th>Africa/India</th>
                     <th>Count</th>
                     <th>%</th>
                   </tr>
@@ -328,14 +331,6 @@
               </table>
             </div>
           </div>
-
-          <!-- Abnormality / Defect Breakdown -->
-          <!-- Abnormality / Defect Breakdown (hidden temporarily)
-          <div id="defectSection" class="defect-section hidden">
-            <div class="section-title">Abnormalities / Defect Breakdown</div>
-            <div id="defectBreakdown" class="defect-breakdown"></div>
-          </div>
-          -->
 
           <!-- Color Distribution -->
           <div class="color-dist" id="colorDist"></div>
@@ -365,6 +360,26 @@
     <div id="toast" class="toast hidden" role="alert"></div>
   </main>
 
+  <!-- Crop Modal -->
+  <div id="cropModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="cropModalTitle">Crop Image</h3>
+        <button class="close-btn" id="closeCropModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="cropper-container">
+          <img id="cropImage" src="" alt="Image to crop">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="cancelCropBtn" class="btn-ghost">Cancel</button>
+        <button id="saveCropBtn" class="btn-primary">Apply Crop</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 

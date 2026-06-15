@@ -28,6 +28,15 @@ const downloadBtn = document.getElementById('downloadBtn')
 const imageOverlay = document.getElementById('image-overlay')
 const sampleWeightInput = document.getElementById('sampleWeight')
 
+// Crop elements
+const cropFrontBtn = document.getElementById('cropFrontBtn')
+const cropBackBtn = document.getElementById('cropBackBtn')
+const cropModal = document.getElementById('cropModal')
+const cropImage = document.getElementById('cropImage')
+const closeCropModal = document.getElementById('closeCropModal')
+const cancelCropBtn = document.getElementById('cancelCropBtn')
+const saveCropBtn = document.getElementById('saveCropBtn')
+
 // Grade elements
 const gradeBadge = document.getElementById('gradeBadge')
 const gradeValue = document.getElementById('gradeValue')
@@ -62,6 +71,14 @@ const PLACEHOLDER = '--'
 let frontFile = null
 let backFile = null
 let toastTimer = null
+
+// Crop state variables
+let originalFrontFile = null
+let originalBackFile = null
+let frontManualCrop = false
+let backManualCrop = false
+let cropperInstance = null
+let currentCropSide = null
 
 
 // ── Utilities ──
@@ -274,6 +291,10 @@ function renderScreenTable(screenData) {
     const tdAperture = document.createElement('td')
     tdAperture.textContent = row.aperture_mm
 
+    const tdGrade = document.createElement('td')
+    tdGrade.textContent = row.africa_india_grade || 'PB'
+    tdGrade.style.fontWeight = '600'
+
     const tdCount = document.createElement('td')
     tdCount.textContent = row.count
 
@@ -283,6 +304,7 @@ function renderScreenTable(screenData) {
 
     tr.appendChild(tdScreen)
     tr.appendChild(tdAperture)
+    tr.appendChild(tdGrade)
     tr.appendChild(tdCount)
     tr.appendChild(tdPct)
     screenTableBody.appendChild(tr)
@@ -345,30 +367,42 @@ function handleFile(file, side) {
 
   if (side === 'front') {
     frontFile = file
+    originalFrontFile = file
+    frontManualCrop = false
     previewFrontImg.src = URL.createObjectURL(file)
     previewFront.classList.remove('hidden')
     dropFront.classList.add('hidden')
+    if (cropFrontBtn) cropFrontBtn.classList.remove('hidden')
     analyzeBtn.disabled = false
   } else {
     backFile = file
+    originalBackFile = file
+    backManualCrop = false
     previewBackImg.src = URL.createObjectURL(file)
     previewBack.classList.remove('hidden')
     dropBack.classList.add('hidden')
+    if (cropBackBtn) cropBackBtn.classList.remove('hidden')
   }
 }
 
 function removeFile(side) {
   if (side === 'front') {
     frontFile = null
+    originalFrontFile = null
+    frontManualCrop = false
     fileFront.value = ''
     previewFront.classList.add('hidden')
     dropFront.classList.remove('hidden')
+    if (cropFrontBtn) cropFrontBtn.classList.add('hidden')
     analyzeBtn.disabled = true
   } else {
     backFile = null
+    originalBackFile = null
+    backManualCrop = false
     fileBack.value = ''
     previewBack.classList.add('hidden')
     dropBack.classList.remove('hidden')
+    if (cropBackBtn) cropBackBtn.classList.add('hidden')
   }
 }
 
@@ -429,12 +463,18 @@ document.querySelectorAll('.remove-btn').forEach(btn => {
 resetBtn.addEventListener('click', () => {
   frontFile = null
   backFile = null
+  originalFrontFile = null
+  originalBackFile = null
+  frontManualCrop = false
+  backManualCrop = false
   fileFront.value = ''
   fileBack.value = ''
   previewFront.classList.add('hidden')
   previewBack.classList.add('hidden')
   dropFront.classList.remove('hidden')
   dropBack.classList.remove('hidden')
+  if (cropFrontBtn) cropFrontBtn.classList.add('hidden')
+  if (cropBackBtn) cropBackBtn.classList.add('hidden')
   analyzeBtn.disabled = true
   clearResults()
   sampleWeightInput.value = 350
@@ -455,8 +495,10 @@ analyzeBtn.addEventListener('click', async () => {
 
   const formData = new FormData()
   formData.append('front_image', frontFile)
+  formData.append('front_manual_crop', frontManualCrop ? 'true' : 'false')
   if (backFile) {
     formData.append('back_image', backFile)
+    formData.append('back_manual_crop', backManualCrop ? 'true' : 'false')
   }
 
   // Sample weight
@@ -657,3 +699,84 @@ if (annotatedImg) {
 }
 
 resetStats()
+
+// ── Crop Modal Logic ──
+
+function openCropModal(side) {
+  currentCropSide = side
+  const fileToCrop = side === 'front' ? originalFrontFile : originalBackFile
+  if (!fileToCrop) return
+
+  cropImage.src = URL.createObjectURL(fileToCrop)
+  cropModal.classList.remove('hidden')
+
+  if (cropperInstance) {
+    cropperInstance.destroy()
+  }
+
+  cropperInstance = new Cropper(cropImage, {
+    viewMode: 1,
+    autoCropArea: 0.9,
+    responsive: true,
+    checkOrientation: false
+  })
+}
+
+function closeCropModalFn() {
+  cropModal.classList.add('hidden')
+  if (cropperInstance) {
+    cropperInstance.destroy()
+    cropperInstance = null
+  }
+  cropImage.src = ''
+}
+
+if (cropFrontBtn) {
+  cropFrontBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    openCropModal('front')
+  })
+}
+
+if (cropBackBtn) {
+  cropBackBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    openCropModal('back')
+  })
+}
+
+if (closeCropModal) closeCropModal.addEventListener('click', closeCropModalFn)
+if (cancelCropBtn) cancelCropBtn.addEventListener('click', closeCropModalFn)
+
+if (saveCropBtn) {
+  saveCropBtn.addEventListener('click', () => {
+    if (!cropperInstance) return
+
+    const canvas = cropperInstance.getCroppedCanvas({
+      maxWidth: 2048,
+      maxHeight: 2048,
+    })
+
+    canvas.toBlob((blob) => {
+      if (!blob) return
+
+      const croppedFile = new File([blob], `${currentCropSide}_cropped.jpg`, {
+        type: 'image/jpeg',
+        lastModified: Date.now()
+      })
+
+      if (currentCropSide === 'front') {
+        frontFile = croppedFile
+        frontManualCrop = true
+        previewFrontImg.src = URL.createObjectURL(croppedFile)
+      } else {
+        backFile = croppedFile
+        backManualCrop = true
+        previewBackImg.src = URL.createObjectURL(croppedFile)
+      }
+
+      closeCropModalFn()
+      showToast(`${currentCropSide === 'front' ? 'Front' : 'Back'} image cropped successfully.`)
+    }, 'image/jpeg', 0.9)
+  })
+}
