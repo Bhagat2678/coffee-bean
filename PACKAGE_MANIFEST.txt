@@ -1,16 +1,16 @@
 ==================================================
 COFFEE BEAN CLASSIFIER - PACKAGE MANIFEST
-Generated: 2026-06-04 14:28:49
+Generated: 2026-06-16 14:57:48
 ==================================================
 
-INCLUDED FILES (28):
-  .gitignore                                                   0.5 KB
-  README.md                                                    6.2 KB
+INCLUDED FILES (26):
+  .gitignore                                                   0.6 KB
+  CoffeeBeanAnalyzer.spec                                      0.8 KB
+  README.md                                                    6.6 KB
   Techstack.md                                                 0.4 KB
-  data/output/.gitkeep                                         0.1 KB
-  data/raw/.gitkeep                                            0.1 KB
   database/schema.sql                                         17.0 KB
   datasets/consolidated/dataset.yaml                           0.4 KB
+  launcher.py                                                 11.2 KB
   main.py                                                      3.6 KB
   models/best.pt                                            6126.4 KB
   requirements.txt                                             0.3 KB
@@ -19,21 +19,19 @@ INCLUDED FILES (28):
   scripts/evaluate.py                                          5.6 KB
   scripts/infer.py                                             9.3 KB
   scripts/train.py                                             3.1 KB
-  session_state.json                                           0.4 KB
   src/__init__.py                                              0.1 KB
   src/analyzer.py                                             10.0 KB
-  src/arcface.py                                              11.3 KB
+  src/arcface.py                                              11.7 KB
   src/cvat_converter.py                                        8.4 KB
-  src/detector.py                                             40.0 KB
-  src/grading.py                                               9.9 KB
-  src/shape_analyzer.py                                       14.5 KB
-  website/app.py                                               8.5 KB
-  website/static/css/style.css                                26.1 KB
-  website/static/js/app.js                                    19.7 KB
-  website/templates/index.html                                16.3 KB
-  website/uploads/.gitkeep                                     0.1 KB
+  src/detector.py                                             57.3 KB
+  src/grading.py                                              12.8 KB
+  src/shape_analyzer.py                                       14.9 KB
+  website/app.py                                               9.2 KB
+  website/static/css/style.css                                32.5 KB
+  website/static/js/app.js                                    25.2 KB
+  website/templates/index.html                                18.6 KB
 
-TOTAL SIZE: 6.20 MB
+TOTAL SIZE: 6.24 MB
 
 EXCLUDED (intentionally):
   - All image/video files (*.jpg, *.png, *.mp4, etc.)

@@ -780,3 +780,21 @@ if (saveCropBtn) {
     }, 'image/jpeg', 0.9)
   })
 }
+
+// ── Theme Toggle Event Listener ──
+const themeToggle = document.getElementById('themeToggle')
+if (themeToggle) {
+  themeToggle.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light'
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light'
+    document.documentElement.setAttribute('data-theme', newTheme)
+    localStorage.setItem('theme', newTheme)
+    
+    // Tiny micro-animation click feedback (scale down slightly and pop back)
+    themeToggle.style.transform = 'scale(0.9) rotate(15deg)'
+    setTimeout(() => {
+      themeToggle.style.transform = ''
+    }, 150)
+  })
+}
+
