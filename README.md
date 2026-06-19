@@ -11,7 +11,7 @@ Detect, count, grade, and analyze coffee beans using a custom YOLOv8 model. Incl
 - **Screen Grading** — Maps bean sizes to standard screen numbers (13–20) with aperture sizes, counts, and percentages
 - **Quality Grade (AAA→C)** — Assigns a grade based on defect count (AAA = ≤3 defects, C = 60+)
 - **Weight & Density** — Enter 350g sample weight → avg weight per bean calculated automatically
- - **Size Dimensions** — Avg length, width, L/W ratio, size class distribution (auto-calibrated from the white template, coin optional)
+ - **Size Dimensions** — Avg length, width, L/W ratio, size class distribution (auto-calibrated from the white template)
 - **Color Analysis** — Color distribution and pixel-level color picker
 - **ArcFace Mapping** — Front↔back bean matching infrastructure using ResNet-18 embeddings (swappable with trained ArcFace model)
 - **Web Interface** — Modern responsive Flask app with drag-and-drop upload
@@ -82,13 +82,12 @@ python website/app.py
    - Quality grade (AAA → C)
    - Screen grading table (Screen 13–20)
    - Avg weight per bean (density)
-   - Size dimensions (requires the white calibration template or a coin for mm calibration)
+   - Size dimensions (requires the white calibration template for mm calibration)
    - Color distribution
    - Defect breakdown
 
 > **Important:** For accurate mm-size calibration, ensure the **white template/background** is visible in the image.
 > The system automatically detects the template (113.52mm × 180.41mm) and uses it for calibration.
-> **Fallback:** If the template isn't detected, place a **5-rupee coin** (23mm diameter) in the frame for calibration.
 
 ## 📊 Model Performance
 

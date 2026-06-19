@@ -9,7 +9,14 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap"
     rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script>
+    (function () {
+      const theme = localStorage.getItem('theme') || 'light';
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
 </head>
 
 <body>
@@ -18,6 +25,26 @@
   <div class="bg-glow bg-glow-3"></div>
 
   <main class="page">
+    <!-- Theme Toggle -->
+    <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme">
+      <!-- Sun icon -->
+      <svg class="sun-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5"></circle>
+        <line x1="12" y1="1" x2="12" y2="3"></line>
+        <line x1="12" y1="21" x2="12" y2="23"></line>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+        <line x1="1" y1="12" x2="3" y2="12"></line>
+        <line x1="21" y1="12" x2="23" y2="12"></line>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      </svg>
+      <!-- Moon icon -->
+      <svg class="moon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+    </button>
+
     <!-- ═══════ HEADER ═══════ -->
     <header class="hero">
       <div class="logo">
@@ -96,7 +123,7 @@
           </div>
           <div class="tip">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/></svg>
-            Place a coin for size reference
+            Plate size: 180.41mm x 113.52mm
           </div>
           <div class="tip">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
@@ -136,12 +163,14 @@
               </div>
               <p class="drop-text-sm">Drop front-side image</p>
               <p class="drop-hint-sm">or click to browse</p>
-              <label class="upload-btn-sm"><input id="fileFront" type="file" accept="image/png, image/jpeg" hidden>Choose</label>
+              <label class="upload-btn-sm" for="fileFront">Choose</label>
+              <input id="fileFront" type="file" accept="image/png, image/jpeg" hidden>
             </div>
             <div id="preview-front" class="preview-mini hidden">
               <img id="preview-front-img" src="#" alt="Front preview" />
               <button class="remove-btn" data-side="front" title="Remove">&times;</button>
             </div>
+            <button class="crop-btn-sm hidden" id="cropFrontBtn" data-side="front">Crop Image</button>
           </div>
 
           <!-- Back Image -->
@@ -156,12 +185,14 @@
               </div>
               <p class="drop-text-sm">Drop back-side image</p>
               <p class="drop-hint-sm">or click to browse</p>
-              <label class="upload-btn-sm"><input id="fileBack" type="file" accept="image/png, image/jpeg" hidden>Choose</label>
+              <label class="upload-btn-sm" for="fileBack">Choose</label>
+              <input id="fileBack" type="file" accept="image/png, image/jpeg" hidden>
             </div>
             <div id="preview-back" class="preview-mini hidden">
               <img id="preview-back-img" src="#" alt="Back preview" />
               <button class="remove-btn" data-side="back" title="Remove">&times;</button>
             </div>
+            <button class="crop-btn-sm hidden" id="cropBackBtn" data-side="back">Crop Image</button>
           </div>
         </div>
 
@@ -256,6 +287,10 @@
               <div class="stat-value" id="avgBeanSize">--</div>
               <div class="stat-label">Avg Bean Size (mm)</div>
             </div>
+            <div class="stat-card">
+              <div class="stat-value" id="avgBeanLength">--</div>
+              <div class="stat-label">Avg Bean Length (mm)</div>
+            </div>
           </div>
 
           <!-- Grade Badge -->
@@ -263,7 +298,6 @@
             <div class="grade-badge" id="gradeValue">--</div>
             <div class="grade-details">
               <span class="grade-label" id="gradeLabel">--</span>
-              <span class="grade-defects" id="gradeDefects">--</span>
             </div>
           </div>
 
@@ -314,6 +348,7 @@
                   <tr>
                     <th>Screen No.</th>
                     <th>Aperture (mm)</th>
+                    <th>Africa/India</th>
                     <th>Count</th>
                     <th>%</th>
                   </tr>
@@ -321,12 +356,6 @@
                 <tbody id="screenTableBody"></tbody>
               </table>
             </div>
-          </div>
-
-          <!-- Abnormality / Defect Breakdown -->
-          <div id="defectSection" class="defect-section hidden">
-            <div class="section-title">Abnormalities / Defect Breakdown</div>
-            <div id="defectBreakdown" class="defect-breakdown"></div>
           </div>
 
           <!-- Color Distribution -->
@@ -357,6 +386,26 @@
     <div id="toast" class="toast hidden" role="alert"></div>
   </main>
 
+  <!-- Crop Modal -->
+  <div id="cropModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="cropModalTitle">Crop Image</h3>
+        <button class="close-btn" id="closeCropModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="cropper-container">
+          <img id="cropImage" src="" alt="Image to crop">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="cancelCropBtn" class="btn-ghost">Cancel</button>
+        <button id="saveCropBtn" class="btn-primary">Apply Crop</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 

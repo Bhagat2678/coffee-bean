@@ -82,7 +82,7 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def _run_detection(upload_path, uid, ext):
+def _run_detection(upload_path, uid, ext, manual_crop=False):
     """Run YOLO detection on a single image. Returns (result_dict, annotated_url)."""
     annotated_name = f'{uid}_annotated.{ext}'
     annotated_path = os.path.join(app.config['ANNOTATED_FOLDER'], annotated_name)
@@ -102,6 +102,7 @@ def _run_detection(upload_path, uid, ext):
         min_aspect=MIN_ASPECT,
         max_aspect=MAX_ASPECT,
         box_shrink_ratio=BOX_SHRINK_RATIO,
+        manual_crop=manual_crop,
         debug=False
     )
 
@@ -144,16 +145,20 @@ def analyze():
     # Sample weight (default 350g)
     sample_weight = _get_request_float('sample_weight', 350.0)
 
+    # Accept manual crop indicator (if cropped on client-side)
+    front_manual_crop = request.form.get('front_manual_crop') == 'true'
+    back_manual_crop = request.form.get('back_manual_crop') == 'true'
+
     start = time.time()
     try:
         # ── Run detection on FRONT image ──
-        front_result, front_annotated_url = _run_detection(upload_front, uid_front, ext_front)
+        front_result, front_annotated_url = _run_detection(upload_front, uid_front, ext_front, manual_crop=front_manual_crop)
 
         # ── Run detection on BACK image (if provided) ──
         back_result = None
         back_annotated_url = None
         if upload_back:
-            back_result, back_annotated_url = _run_detection(upload_back, uid_back, ext_back)
+            back_result, back_annotated_url = _run_detection(upload_back, uid_back, ext_back, manual_crop=back_manual_crop)
 
     except Exception as e:
         return jsonify({'error': 'Server error during inference', 'details': str(e)}), 500
@@ -171,6 +176,7 @@ def analyze():
     screen_dist = compute_screen_distribution(detections, pixels_per_mm)
     grade_info = classify_grade(detections, bean_count)
     size_stats = compute_size_stats(detections, pixels_per_mm)
+
 
     # ── ArcFace front-back matching (if both images provided) ──
     arcface_pairs = []
@@ -206,6 +212,7 @@ def analyze():
         'detection_source': front_result.get('detection_source', 'model'),
         'color_distribution': front_result.get('color_distribution', {}),
         'avg_bean_size_mm': front_result.get('avg_bean_size_mm'),
+        'avg_bean_length_mm': front_result.get('avg_bean_length_mm'),
         'detections': detections,
         # New fields
         'sample_weight_g': sample_weight,

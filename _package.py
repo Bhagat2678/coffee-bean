@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parent
 INCLUDE_FILES = [
     # Root-level files
     "main.py",
+    "launcher.py",
+    "CoffeeBeanAnalyzer.spec",
     "requirements.txt",
     "README.md",
     "Techstack.md",

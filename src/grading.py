@@ -5,33 +5,28 @@ Description: Coffee bean quality grading — screen distribution, density,
 """
 
 # ---------------------------------------------------------------------------
-# Screen Grading Table  (Indian standard)
+# Screen Grading Table  (Africa/India standard)
 # Screen number → minimum aperture in mm   (beans that stay ON the sieve)
 # ---------------------------------------------------------------------------
 SCREEN_TABLE = [
     {"screen": 20, "aperture_mm": 8.00},
+    {"screen": 19.5, "aperture_mm": 7.75},
     {"screen": 19, "aperture_mm": 7.50},
-    {"screen": 18, "aperture_mm": 7.10},
-    {"screen": 17, "aperture_mm": 6.70},
-    {"screen": 16, "aperture_mm": 6.30},
-    {"screen": 15, "aperture_mm": 5.95},
-    {"screen": 14, "aperture_mm": 5.60},
-    {"screen": 13, "aperture_mm": 5.00},
-]
-
-# Grade definitions: grade → max defect count (inclusive)
-GRADE_THRESHOLDS = [
-    {"grade": "AAA", "label": "Specialty",     "max_defects": 3},
-    {"grade": "AA",  "label": "Premium",       "max_defects": 8},
-    {"grade": "A",   "label": "Good",          "max_defects": 20},
-    {"grade": "B",   "label": "Fair / Average", "max_defects": 40},
-    {"grade": "BA",  "label": "Below Average",  "max_defects": 60},
-    {"grade": "C",   "label": "Commercial",     "max_defects": None},  # everything above 60
+    {"screen": 18.5, "aperture_mm": 7.25},
+    {"screen": 18, "aperture_mm": 7.00},
+    {"screen": 17, "aperture_mm": 6.75},
+    {"screen": 16, "aperture_mm": 6.50},
+    {"screen": 15, "aperture_mm": 6.00},
+    {"screen": 14, "aperture_mm": 5.50},
+    {"screen": 13, "aperture_mm": 5.25},
+    {"screen": 12, "aperture_mm": 5.00},
+    {"screen": 11, "aperture_mm": 4.50},
+    {"screen": 10, "aperture_mm": 4.00},
+    {"screen": 9, "aperture_mm": 3.50},
+    {"screen": 8, "aperture_mm": 3.00},
 ]
 
 # Defect classes that the YOLO model can report
-# These are actual defects/problems on COFFEE BEANS
-# Note: "foreign" objects are not beans, they're classified as non-beans (not defects)
 DEFECT_CLASSES = {"black", "broken", "immature", "infested", "sour", 
                  "overfermented", "moldy", "defective", "damaged", 
                  "fermented", "underripe", "premature", "fungal", "diseased",
@@ -54,9 +49,9 @@ def compute_screen_distribution(detections, pixels_per_mm=None):
                     {'screen', 'aperture_mm', 'count', 'percentage'}.
                     Sorted from largest (Screen 20) to smallest.
     """
-    # Build a zero-count dict for every screen + "Below 13"
+    # Build a zero-count dict for every screen + "Below 8"
     screen_counts = {s["screen"]: 0 for s in SCREEN_TABLE}
-    screen_counts["Below 13"] = 0
+    screen_counts["Below 8"] = 0
 
     bean_detections = [d for d in detections
                        if d.get("object_type") == "coffee_bean" or d.get("class") == "coffee_bean"]
@@ -68,8 +63,8 @@ def compute_screen_distribution(detections, pixels_per_mm=None):
     for det in bean_detections:
         width_mm = _get_width_mm(det, pixels_per_mm)
         if width_mm is None:
-            # Can't classify without size — put in "Below 13" as fallback
-            screen_counts["Below 13"] += 1
+            # Can't classify without size — put in "Below 8" as fallback
+            screen_counts["Below 8"] += 1
             continue
 
         placed = False
@@ -79,7 +74,7 @@ def compute_screen_distribution(detections, pixels_per_mm=None):
                 placed = True
                 break
         if not placed:
-            screen_counts["Below 13"] += 1
+            screen_counts["Below 8"] += 1
 
     return _format_screen_result(screen_counts, total)
 
@@ -108,22 +103,63 @@ def _format_screen_result(screen_counts, total):
     for row in SCREEN_TABLE:
         cnt = screen_counts[row["screen"]]
         pct = round((cnt / total) * 100, 1) if total > 0 else 0.0
+        # Determine grade for this screen
+        grade_info = africa_india_grade_for_screen_64(row["screen"])
         result.append({
             "screen": row["screen"],
             "aperture_mm": row["aperture_mm"],
+            "screen_64": row["screen"],
+            "africa_india_grade": grade_info["grade"],
             "count": cnt,
             "percentage": pct,
         })
-    # Below 13
-    cnt = screen_counts["Below 13"]
+    # Below 8
+    cnt = screen_counts["Below 8"]
     pct = round((cnt / total) * 100, 1) if total > 0 else 0.0
     result.append({
-        "screen": "Below 13",
-        "aperture_mm": "< 5.00",
+        "screen": "Below 8",
+        "aperture_mm": "< 3.00",
+        "screen_64": "< 8",
+        "africa_india_grade": "PB",
         "count": cnt,
         "percentage": pct,
     })
     return result
+
+
+def mm_to_screen_64(length_mm):
+    """Convert millimetres to the coffee screen scale measured in 1/64 inch."""
+    if length_mm is None:
+        return None
+    return round((float(length_mm) / 25.4) * 64, 2)
+
+
+def africa_india_grade_for_screen_64(screen_64):
+    """Map a screen size in 1/64 inch scale to the Africa and India grading system."""
+    if screen_64 is None:
+        return {"grade": "PB", "label": "Africa/India PB", "min_screen": None}
+
+    screen_val = float(screen_64)
+    # Using mid-point boundaries to avoid rounding discrepancies from physical mm conversion:
+    if screen_val >= 18.25:
+        return {"grade": "AA", "label": "Africa/India AA", "min_screen": 18.5}
+    elif screen_val >= 16.5:
+        return {"grade": "A", "label": "Africa/India A", "min_screen": 17.0}
+    elif screen_val >= 14.5:
+        return {"grade": "B", "label": "Africa/India B", "min_screen": 15.0}
+    elif screen_val >= 13.5:
+        return {"grade": "C", "label": "Africa/India C", "min_screen": 14.0}
+    else:
+        return {"grade": "PB", "label": "Africa/India PB", "min_screen": None}
+
+
+def africa_india_grade_for_length_mm(length_mm):
+    """Map a bean/screen aperture in mm to the Africa and India grading system."""
+    if length_mm is None:
+        return {"grade": "PB", "label": "Africa/India PB", "min_screen": None}
+    
+    screen_64 = mm_to_screen_64(length_mm)
+    return africa_india_grade_for_screen_64(screen_64)
 
 
 # ── Density Calculator ─────────────────────────────────────────────────────
@@ -158,10 +194,8 @@ def compute_density(sample_weight_g, bean_count):
 
 def classify_grade(detections, bean_count=None):
     """
-    Assign a quality grade (AAA → C) based on defect count.
-
-    Defects are detected beans whose model label (defect_type) indicates
-    a problem: black, broken, foreign, etc.
+    Assign a quality grade (AA → PB) based on average bean length (mm)
+    mapped to the Africa and India grading system.
 
     Args:
         detections (list[dict]): Enriched detections from the detector.
@@ -177,13 +211,17 @@ def classify_grade(detections, bean_count=None):
             if d.get("object_type") == "coffee_bean" or d.get("class") == "coffee_bean"
         )
 
+    # Count defects for diagnostic details (e.g. breakdown, UI stats)
     defect_breakdown = {}
     defect_count = 0
+    MIN_DEFECT_CONFIDENCE = 0.4
     for det in detections:
         # Only count defects for actual coffee beans (not non-beans)
         if det.get("object_type") != "coffee_bean" and det.get("class") != "coffee_bean":
             continue
-        
+        conf = float(det.get("confidence") or 0.0)
+        if conf < MIN_DEFECT_CONFIDENCE:
+            continue
         defect_type = (det.get("defect_type") or "").lower()
         if defect_type in DEFECT_CLASSES:
             defect_count += 1
@@ -191,21 +229,41 @@ def classify_grade(detections, bean_count=None):
 
     defect_pct = round((defect_count / bean_count) * 100, 2) if bean_count > 0 else 0.0
 
-    grade = "C"
-    label = "Commercial"
-    for entry in GRADE_THRESHOLDS:
-        if entry["max_defects"] is None:
-            grade = entry["grade"]
-            label = entry["label"]
-            break
-        if defect_count <= entry["max_defects"]:
-            grade = entry["grade"]
-            label = entry["label"]
-            break
+    # Determine grade based on bean length (crease midline or max of size)
+    bean_lengths = []
+    for det in detections:
+        if det.get("object_type") != "coffee_bean" and det.get("class") != "coffee_bean":
+            continue
+        
+        # Prefer midline crease length if present
+        length_mm = det.get("length_mm")
+        if length_mm is not None:
+            bean_lengths.append(float(length_mm))
+        else:
+            # Fallback to the larger dimension of size_mm
+            sm = det.get("size_mm")
+            if sm and sm.get("width") and sm.get("height"):
+                l = max(float(sm["width"]), float(sm["height"]))
+                bean_lengths.append(l)
+
+    grade = "PB"
+    label = "Africa/India PB"
+    avg_length = None
+    avg_screen_64 = None
+
+    if bean_lengths:
+        avg_length = sum(bean_lengths) / len(bean_lengths)
+        avg_screen_64 = mm_to_screen_64(avg_length)
+        grade_row = africa_india_grade_for_screen_64(avg_screen_64)
+        grade = grade_row["grade"]
+        label = grade_row["label"]
 
     return {
         "grade": grade,
         "label": label,
+        "grade_basis": "africa_india_screen_length",
+        "screen_64": avg_screen_64,
+        "avg_length_mm": round(avg_length, 2) if avg_length is not None else None,
         "defect_count": defect_count,
         "defect_percentage": defect_pct,
         "defect_breakdown": defect_breakdown,
@@ -232,6 +290,7 @@ def compute_size_stats(detections, pixels_per_mm=None):
     widths = []
 
     for det in bean_dets:
+        length_mm = det.get("length_mm")
         sm = det.get("size_mm")
         if sm and sm.get("width") and sm.get("height"):
             w = float(sm["width"])
@@ -247,8 +306,9 @@ def compute_size_stats(detections, pixels_per_mm=None):
         else:
             continue
 
-        # Length = larger dimension, width = smaller
-        length = max(w, h)
+        # Prefer detector-provided crease/midline length when available.
+        # Fall back to the larger dimension of the size estimate if needed.
+        length = float(length_mm) if length_mm else max(w, h)
         width = min(w, h)
         lengths.append(length)
         widths.append(width)
