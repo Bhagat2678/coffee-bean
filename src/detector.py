@@ -5,12 +5,23 @@ Supports both pre-trained models and custom trained models.
 Includes robust NMS post-processing to handle overlapping detections.
 """
 
+import os
 import cv2
 import numpy as np
+import torch
 from ultralytics import YOLO
 from pathlib import Path
 
 from src.shape_analyzer import ShapeAnalyzer
+
+# SAM 2 — optional; degrades gracefully if the package is not installed.
+try:
+    from sam2.build_sam import build_sam2
+    from sam2.sam2_image_predictor import SAM2ImagePredictor
+    _SAM2_AVAILABLE = True
+except ImportError:
+    _SAM2_AVAILABLE = False
+    SAM2ImagePredictor = None
 
 
 class ObjectDetector:
@@ -20,18 +31,57 @@ class ObjectDetector:
 
     TEMPLATE_WIDTH_MM = 113.52
     TEMPLATE_HEIGHT_MM = 180.41
+    # Maximum boxes processed in a single SAM 2 decoder pass.
+    # Keeps peak VRAM usage predictable on consumer GPUs (e.g. GTX 1650 4 GB).
+    SAM_CHUNK_SIZE = 64
     
-    def __init__(self, model_path="yolov8n.pt"):
+    def __init__(self, model_path="yolov8n.pt", use_sam2=False, sam2_device=None):
         """
         Initialize the detector with a YOLOv8 model.
         
         Args:
             model_path (str): Path to the YOLOv8 model file.
+            use_sam2 (bool): If True, also load a SAM 2 predictor for high-fidelity
+                masks.  Silently disabled when the ``sam2`` package is not installed.
+            sam2_device (str | None): Device for SAM 2 inference (``'cuda'``,
+                ``'cpu'``, etc.).  Auto-detected when ``None``.
         """
         self.model = YOLO(model_path)
         self.model_path = model_path
         self.shape_analyzer = ShapeAnalyzer()
         print(f"[INFO] Model loaded: {model_path}")
+
+        # SAM 2 predictor (optional)
+        self.use_sam2 = use_sam2 and _SAM2_AVAILABLE
+        self.sam2_predictor = None
+        self.sam2_device = 'cpu'
+        if self.use_sam2:
+            try:
+                if sam2_device is None:
+                    sam2_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                _sam2_cfg = 'configs/sam2.1/sam2.1_hiera_l.yaml'
+                _sam2_weights = os.path.join(_root, 'models', 'sam2.1_hiera_large.pt')
+                _sam2_model = build_sam2(_sam2_cfg, _sam2_weights, device=sam2_device)
+                self.sam2_predictor = SAM2ImagePredictor(_sam2_model)
+                self.sam2_device = sam2_device
+                # ── Phase 4: Enable PyTorch SDPA memory-efficient attention ──
+                if sam2_device == 'cuda' and torch.cuda.is_available():
+                    try:
+                        torch.backends.cuda.enable_flash_sdp(True)
+                        print('[INFO] SAM 2: Flash-Attention SDP enabled')
+                    except Exception:
+                        pass
+                    try:
+                        torch.backends.cuda.enable_mem_efficient_sdp(True)
+                        print('[INFO] SAM 2: Memory-efficient SDP enabled')
+                    except Exception:
+                        pass
+                print(f'[INFO] SAM 2 predictor initialized on {sam2_device}')
+            except Exception as e:
+                print(f'[WARN] SAM 2 initialization failed: {e}. Falling back to OpenCV.')
+                self.use_sam2 = False
+                self.sam2_predictor = None
     
     def _calculate_iou(self, box1, box2):
         """Calculate Intersection over Union between two boxes."""
@@ -986,6 +1036,164 @@ class ObjectDetector:
 
         return use_fallback
 
+    def _segment_with_sam2(self, image, boxes):
+        """
+        Run SAM 2 to generate high-fidelity binary masks for each detected
+        bounding box using **chunked batched inference**.
+
+        Phase 4 Optimization strategy
+        ─────────────────────────────
+        • The image is embedded **once** (the most expensive step).
+        • Bounding-box prompts are grouped into chunks of at most
+          ``SAM_CHUNK_SIZE`` (default 64) and each chunk runs through the
+          SAM 2 decoder in a single forward pass, keeping peak VRAM usage
+          flat regardless of how many beans are in the image.
+        • All tensor operations run inside ``torch.autocast`` with FP16 to
+          halve memory bandwidth and accelerate the decoder.
+        • PyTorch SDPA (Flash-Attention / memory-efficient attention) is
+          pre-enabled at init time to further reduce attention memory.
+
+        Args:
+            image (np.ndarray): Full image in BGR format (H × W × 3).
+            boxes (list[list[int]]): List of [x1, y1, x2, y2] bounding boxes.
+
+        Returns:
+            list[np.ndarray | None]: Binary uint8 masks (255 = bean, 0 = bg),
+                one per box.  Returns None for a box when extraction fails.
+        """
+        if self.sam2_predictor is None or len(boxes) == 0:
+            return [None] * len(boxes)
+
+        try:
+            # SAM 2 expects RGB
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+            with torch.autocast(device_type=device_type, dtype=torch.float16):
+                # ── Embed image once (encoder forward pass) ──
+                self.sam2_predictor.set_image(image_rgb)
+
+                # ── Chunked decoder passes ──
+                result = []
+                chunk_size = self.SAM_CHUNK_SIZE
+                for chunk_start in range(0, len(boxes), chunk_size):
+                    chunk_boxes = boxes[chunk_start: chunk_start + chunk_size]
+                    boxes_arr = np.array(chunk_boxes, dtype=np.float32)
+
+                    mask_input, unnorm_coords, labels, unnorm_box = (
+                        self.sam2_predictor._prep_prompts(
+                            point_coords=None,
+                            point_labels=None,
+                            box=boxes_arr,
+                            mask_logits=None,
+                            normalize_coords=True,
+                        )
+                    )
+
+                    # Single decoder pass for this chunk → (C, 1, H, W)
+                    masks_t, _iou_t, _ = self.sam2_predictor._predict(
+                        unnorm_coords,
+                        labels,
+                        unnorm_box,
+                        mask_input,
+                        multimask_output=False,
+                        return_logits=False,
+                    )
+
+                    # (C, H, W) bool → numpy, then crop to each box ROI
+                    masks_np = masks_t.squeeze(1).cpu().numpy()
+                    for mask_bool, box in zip(masks_np, chunk_boxes):
+                        x1, y1, x2, y2 = [int(v) for v in box]
+                        roi_mask = mask_bool[y1:y2, x1:x2].astype(np.uint8) * 255
+                        result.append(roi_mask)
+
+            n_valid = sum(m is not None and m.size > 0 for m in result)
+            n_chunks = (len(boxes) + chunk_size - 1) // chunk_size
+            print(f'   [SAM2] {n_valid}/{len(boxes)} masks via {n_chunks} chunk(s) '
+                  f'(chunk_size={chunk_size})')
+            return result
+
+        except Exception as e:
+            print(f'[WARN] SAM 2 segmentation failed: {e}')
+            return [None] * len(boxes)
+
+    def _estimate_length_mm_from_mask(self, mask, pixels_per_mm):
+        """
+        Estimate bean length in mm from a high-fidelity binary mask.
+
+        Delegates to ShapeAnalyzer which fits an ellipse to the mask contour
+        and measures the major-axis length.
+
+        Args:
+            mask (np.ndarray): Binary uint8 ROI mask (255 = bean).
+            pixels_per_mm (float | dict): Calibration factor.
+
+        Returns:
+            float | None: Length in mm, or None if analysis fails.
+        """
+        if mask is None or mask.size == 0:
+            return None
+
+        if isinstance(pixels_per_mm, dict):
+            ppm_x = float(pixels_per_mm.get('x') or pixels_per_mm.get('avg') or 0)
+            ppm_y = float(pixels_per_mm.get('y') or pixels_per_mm.get('avg') or 0)
+        else:
+            ppm_x = float(pixels_per_mm or 0)
+            ppm_y = ppm_x
+
+        if ppm_x <= 0 or ppm_y <= 0:
+            return None
+
+        try:
+            analysis = self.shape_analyzer.analyze(mask, ppm_x, ppm_y)
+            length_mm = analysis.get('midline_length_mm')
+            return float(length_mm) if length_mm and length_mm > 0 else None
+        except Exception:
+            return None
+
+    def _estimate_size_mm_from_mask(self, mask, pixels_per_mm):
+        """
+        Estimate bean width and height in mm from a high-fidelity binary mask.
+
+        Uses the minimum-area bounding rectangle of the largest contour inside
+        the mask to report (minor_axis_mm, major_axis_mm).
+
+        Args:
+            mask (np.ndarray): Binary uint8 ROI mask (255 = bean).
+            pixels_per_mm (float | dict): Calibration factor.
+
+        Returns:
+            dict | None: {'width': float, 'height': float} in mm, or None.
+        """
+        if mask is None or mask.size == 0:
+            return None
+
+        if isinstance(pixels_per_mm, dict):
+            ppm_x = float(pixels_per_mm.get('x') or pixels_per_mm.get('avg') or 0)
+            ppm_y = float(pixels_per_mm.get('y') or pixels_per_mm.get('avg') or 0)
+        else:
+            ppm_x = float(pixels_per_mm or 0)
+            ppm_y = ppm_x
+
+        ppm_avg = (ppm_x + ppm_y) / 2.0
+        if ppm_avg <= 0:
+            return None
+
+        try:
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                return None
+            cnt = max(contours, key=cv2.contourArea)
+            rect = cv2.minAreaRect(cnt)
+            rect_w, rect_h = rect[1]
+            if rect_w <= 0 or rect_h <= 0:
+                return None
+            short_mm = float(round(min(rect_w, rect_h) / ppm_avg, 1))
+            long_mm = float(round(max(rect_w, rect_h) / ppm_avg, 1))
+            return {'width': short_mm, 'height': long_mm}
+        except Exception:
+            return None
+
     def detect_objects(self, image_path, confidence_threshold=0.25, save_output=None,
                        iou=0.3,
                        min_confidence_output=0.25,
@@ -996,6 +1204,7 @@ class ObjectDetector:
                        box_shrink_ratio=0.15,
                        use_contour_fallback=False,
                        manual_crop=False,
+                       use_sam2=None,
                        debug=False):
         """
         Detect objects in an image and count them by class with extra post-processing.
@@ -1017,12 +1226,14 @@ class ObjectDetector:
             box_shrink_ratio (float): Shrink boxes by this ratio (0.15 = 15% from each side).
             use_contour_fallback (bool): If True, use contour segmentation when model quality is poor.
             manual_crop (bool): If True, skip auto-cropping and calibrate using full image dimensions.
+            use_sam2 (bool | None): Override instance-level use_sam2 flag. None uses the instance default.
             debug (bool): If True, print per-detection filtering decisions.
 
         Returns:
             dict: Detection results with filtered counts, boxes, and calibrated size measurements.
                   'pixels_per_mm': Calibration factor derived from the template.
                   'size_mm': Each detection includes {'width': mm, 'height': mm} when calibrated.
+                  'sam2_active': Whether SAM 2 mask generation was used for this call.
         """
         image = cv2.imread(image_path)
         if image is None:
@@ -1175,6 +1386,15 @@ class ObjectDetector:
         final_detections.sort(key=lambda d: (d['box'][1], d['box'][0]))
         detection_source = 'contour_fallback' if use_fallback else 'model'
 
+        # --- SAM 2 Mask Generation ---
+        _use_sam2 = self.use_sam2 if use_sam2 is None else bool(use_sam2)
+        sam2_masks = {}
+        if _use_sam2 and self.sam2_predictor is not None and final_detections:
+            raw_boxes_for_sam2 = [det['box'] for det in final_detections]
+            masks = self._segment_with_sam2(image, raw_boxes_for_sam2)
+            sam2_masks = {i: m for i, m in enumerate(masks)}
+            print(f'   [SAM2] Generated {sum(m is not None for m in masks)} high-fidelity masks')
+
         # Enrich detections with object type and color info.
         enriched_detections = []
         bean_count = 0
@@ -1189,8 +1409,18 @@ class ObjectDetector:
 
         color_distribution = {}
         all_boxes = [det['box'] for det in final_detections]
-        for det in final_detections:
+        for idx, det in enumerate(final_detections):
             det_copy = det.copy()
+            sam2_mask = sam2_masks.get(idx)
+            if sam2_mask is not None:
+                det_copy['sam2_mask_data'] = sam2_mask
+                contours, _ = cv2.findContours(sam2_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    cnt = max(contours, key=cv2.contourArea)
+                    x1, y1, x2, y2 = det_copy['box']
+                    cnt_abs = cnt + np.array([x1, y1])
+                    det_copy['polygon'] = cnt_abs.squeeze(1).tolist()
+
             color_info = self._extract_color_info(image, det_copy['box'])
             model_class = det.get('class', '').lower()
 
@@ -1255,25 +1485,46 @@ class ObjectDetector:
             print(f"   [DEBUG] Bean/non-bean split: beans={bean_count}, non_beans={non_bean_count}")
 
         # Calculate size in mm for each detection
+        # If SAM 2 masks are available, use high-fidelity masks; otherwise fall back to OpenCV.
         bean_sizes = []
         bean_lengths = []
+        ppm_dict = (
+            {'x': pixels_per_mm_x, 'y': pixels_per_mm_y, 'avg': pixels_per_mm}
+            if pixels_per_mm_x and pixels_per_mm_y
+            else pixels_per_mm
+        )
         for det in enriched_detections:
-            length_mm = self._estimate_length_mm(
-                image,
-                det['box'],
-                {'x': pixels_per_mm_x, 'y': pixels_per_mm_y, 'avg': pixels_per_mm} if pixels_per_mm_x and pixels_per_mm_y else pixels_per_mm,
-            )
-            size_mm = self._estimate_size_mm(
-                image,
-                det['box'],
-                {'x': pixels_per_mm_x, 'y': pixels_per_mm_y, 'avg': pixels_per_mm} if pixels_per_mm_x and pixels_per_mm_y else pixels_per_mm,
-            )
+            sam2_mask = det.get('sam2_mask_data')
+            if sam2_mask is not None:
+                # High-fidelity path: use SAM 2 mask directly
+                length_mm = self._estimate_length_mm_from_mask(sam2_mask, ppm_dict)
+                size_mm = self._estimate_size_mm_from_mask(sam2_mask, ppm_dict)
+                det['sam2_mask'] = True
+            else:
+                # Fallback path: OpenCV Otsu-based silhouette
+                length_mm = self._estimate_length_mm(
+                    image,
+                    det['box'],
+                    ppm_dict,
+                )
+                size_mm = self._estimate_size_mm(
+                    image,
+                    det['box'],
+                    ppm_dict,
+                )
+                det['sam2_mask'] = False
             det['length_mm'] = float(length_mm) if length_mm else None
             det['size_mm'] = size_mm
             if length_mm and det.get('object_type') == 'coffee_bean':
                 bean_lengths.append(float(length_mm))
             if size_mm and det.get('object_type') == 'coffee_bean':
                 bean_sizes.append((size_mm['width'], size_mm['height']))
+
+        # Clean up temporary mask data from returned dictionaries
+        for det in enriched_detections:
+            if 'sam2_mask_data' in det:
+                del det['sam2_mask_data']
+
 
         # Compute average bean size
         avg_bean_size = None
@@ -1303,6 +1554,21 @@ class ObjectDetector:
             print(f"   (Fallback used: model={len(model_detections)}, contour={len(contour_detections)})")
 
         image_annotated = image.copy()
+
+        # Draw translucent mask fills first if SAM 2 was used
+        if _use_sam2 and sam2_masks:
+            overlay = image_annotated.copy()
+            for idx, det in enumerate(final_detections):
+                sam2_mask = sam2_masks.get(idx)
+                if sam2_mask is not None:
+                    x1, y1, x2, y2 = det['box']
+                    class_name = det.get('class', 'coffee_bean')
+                    fill_color = (0, 255, 0) if class_name == 'coffee_bean' else (0, 165, 255)
+                    # Apply color where mask is 255
+                    roi = overlay[y1:y2, x1:x2]
+                    roi[sam2_mask > 0] = fill_color
+            cv2.addWeighted(overlay, 0.35, image_annotated, 0.65, 0, image_annotated)
+
         for i, det in enumerate(enriched_detections):
             x1, y1, x2, y2 = det['box']
             class_name = det['class']
@@ -1373,6 +1639,7 @@ class ObjectDetector:
             'pixels_per_mm': round(pixels_per_mm, 2) if pixels_per_mm else None,
             'pixels_per_mm_x': round(pixels_per_mm_x, 2) if pixels_per_mm_x else None,
             'pixels_per_mm_y': round(pixels_per_mm_y, 2) if pixels_per_mm_y else None,
+            'sam2_active': _use_sam2,
         }
 
     def get_model_info(self):

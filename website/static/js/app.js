@@ -27,6 +27,7 @@ const toast = document.getElementById('toast')
 const downloadBtn = document.getElementById('downloadBtn')
 const imageOverlay = document.getElementById('image-overlay')
 const sampleWeightInput = document.getElementById('sampleWeight')
+const useSam2Input = document.getElementById('useSam2')
 
 // Crop elements
 const cropFrontBtn = document.getElementById('cropFrontBtn')
@@ -504,6 +505,10 @@ analyzeBtn.addEventListener('click', async () => {
   // Sample weight
   const weight = parseFloat(sampleWeightInput.value) || 350
   formData.append('sample_weight', weight)
+
+  // SAM 2 Toggle
+  const useSam2 = useSam2Input ? useSam2Input.checked : true
+  formData.append('use_sam2', useSam2 ? 'true' : 'false')
 
   try {
     const response = await fetch('/analyze', { method: 'POST', body: formData })

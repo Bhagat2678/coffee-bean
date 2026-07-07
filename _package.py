@@ -27,6 +27,7 @@ INCLUDE_FILES = [
     "Techstack.md",
     ".gitignore",
     "session_state.json",
+    "grading/Grade.txt",
 
     # src/
     "src/__init__.py",
@@ -42,6 +43,8 @@ INCLUDE_FILES = [
     "scripts/evaluate.py",
     "scripts/infer.py",
     "scripts/train.py",
+    "scripts/download_sam2.py",
+    "scripts/verify_sam2.py",
 
     # website/
     "website/app.py",
@@ -54,6 +57,17 @@ INCLUDE_FILES = [
 
     # dataset config only (no images)
     "datasets/consolidated/dataset.yaml",
+
+    # reports/
+    "reports/README.md",
+    "reports/cloud_deployment_guide.md",
+    "reports/AI_Agents/2026-07-07.md",
+    "reports/Achyut/README.md",
+    "reports/Bhagat/README.md",
+    "reports/Aaarya/README.md",
+
+    # configs/
+    "configs/sam2.1/sam2.1_hiera_l.yaml",
 
     # Placeholder .gitkeep files
     "data/raw/.gitkeep",

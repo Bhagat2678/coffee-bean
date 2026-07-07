@@ -148,7 +148,8 @@ def check_dependencies():
         "torch": "torch",
         "torchvision": "torchvision",
         "flask": "flask",
-        "werkzeug": "werkzeug"
+        "werkzeug": "werkzeug",
+        "hydra-core": "hydra"
     }
 
     modules_to_check = []
