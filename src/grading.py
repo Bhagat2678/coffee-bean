@@ -5,25 +5,25 @@ Description: Coffee bean quality grading — screen distribution, density,
 """
 
 # ---------------------------------------------------------------------------
-# Screen Grading Table  (Africa/India standard)
+# Screen Grading Table  (Indian standard)
 # Screen number → minimum aperture in mm   (beans that stay ON the sieve)
 # ---------------------------------------------------------------------------
 SCREEN_TABLE = [
-    {"screen": 20, "aperture_mm": 8.00},
-    {"screen": 19.5, "aperture_mm": 7.75},
-    {"screen": 19, "aperture_mm": 7.50},
-    {"screen": 18.5, "aperture_mm": 7.25},
-    {"screen": 18, "aperture_mm": 7.00},
+    {"screen": 20, "aperture_mm": 7.94},
+    {"screen": 19.5, "aperture_mm": 7.74},
+    {"screen": 19, "aperture_mm": 7.54},
+    {"screen": 18.5, "aperture_mm": 7.34},
+    {"screen": 18, "aperture_mm": 7.14},
     {"screen": 17, "aperture_mm": 6.75},
-    {"screen": 16, "aperture_mm": 6.50},
-    {"screen": 15, "aperture_mm": 6.00},
-    {"screen": 14, "aperture_mm": 5.50},
-    {"screen": 13, "aperture_mm": 5.25},
-    {"screen": 12, "aperture_mm": 5.00},
-    {"screen": 11, "aperture_mm": 4.50},
-    {"screen": 10, "aperture_mm": 4.00},
-    {"screen": 9, "aperture_mm": 3.50},
-    {"screen": 8, "aperture_mm": 3.00},
+    {"screen": 16, "aperture_mm": 6.35},
+    {"screen": 15, "aperture_mm": 5.95},
+    {"screen": 14, "aperture_mm": 5.56},
+    {"screen": 13, "aperture_mm": 5.16},
+    {"screen": 12, "aperture_mm": 4.76},
+    {"screen": 11, "aperture_mm": 4.37},
+    {"screen": 10, "aperture_mm": 3.97},
+    {"screen": 9, "aperture_mm": 3.57},
+    {"screen": 8, "aperture_mm": 3.18},
 ]
 
 # Defect classes that the YOLO model can report
@@ -80,11 +80,19 @@ def compute_screen_distribution(detections, pixels_per_mm=None):
 
 
 def _get_width_mm(det, pixels_per_mm):
-    """Extract bean width in mm from detection dict."""
-    # Prefer pre-computed size_mm
+    """
+    Extract bean size in mm to use for screen classification.
+    Since Grade A is defined by length (6.35 - 6.75 mm), we use the bean's length
+    (height_mm or major axis) to map to the sieve size.
+    """
+    # Prefer pre-computed length_mm
+    if det.get("length_mm") is not None:
+        return float(det["length_mm"])
+
+    # Fall back to size_mm height
     sm = det.get("size_mm")
-    if sm and sm.get("width"):
-        return float(sm["width"])
+    if sm and sm.get("height"):
+        return float(sm["height"])
 
     # Compute from box + calibration
     if pixels_per_mm and pixels_per_mm > 0:
@@ -92,9 +100,9 @@ def _get_width_mm(det, pixels_per_mm):
         if box:
             bw = max(1, box[2] - box[0])
             bh = max(1, box[3] - box[1])
-            # Use the larger dimension as the bean length, smaller as width
-            w_mm = round(min(bw, bh) / pixels_per_mm, 2)
-            return w_mm
+            # Use the larger dimension (length)
+            l_mm = round(max(bw, bh) / pixels_per_mm, 2)
+            return l_mm
     return None
 
 
@@ -116,11 +124,12 @@ def _format_screen_result(screen_counts, total):
     # Below 8
     cnt = screen_counts["Below 8"]
     pct = round((cnt / total) * 100, 1) if total > 0 else 0.0
+    grade_info_below_8 = africa_india_grade_for_screen_64(7.0)
     result.append({
         "screen": "Below 8",
         "aperture_mm": "< 3.00",
         "screen_64": "< 8",
-        "africa_india_grade": "PB",
+        "africa_india_grade": grade_info_below_8["grade"],
         "count": cnt,
         "percentage": pct,
     })
@@ -135,31 +144,49 @@ def mm_to_screen_64(length_mm):
 
 
 def africa_india_grade_for_screen_64(screen_64):
-    """Map a screen size in 1/64 inch scale to the Africa and India grading system."""
+    """Map a screen size in 1/64 inch scale to the Indian grading system."""
     if screen_64 is None:
-        return {"grade": "PB", "label": "Africa/India PB", "min_screen": None}
+        return {"grade": "Triage", "label": "Indian Triage", "min_screen": None}
 
     screen_val = float(screen_64)
-    # Using mid-point boundaries to avoid rounding discrepancies from physical mm conversion:
-    if screen_val >= 18.25:
-        return {"grade": "AA", "label": "Africa/India AA", "min_screen": 18.5}
-    elif screen_val >= 16.5:
-        return {"grade": "A", "label": "Africa/India A", "min_screen": 17.0}
-    elif screen_val >= 14.5:
-        return {"grade": "B", "label": "Africa/India B", "min_screen": 15.0}
-    elif screen_val >= 13.5:
-        return {"grade": "C", "label": "Africa/India C", "min_screen": 14.0}
+    # Using boundaries adjusted for custom Grade A (6.35 - 6.75 mm):
+    if screen_val >= 17.0:
+        return {"grade": "AA", "label": "Indian AA", "min_screen": 18.0}
+    elif screen_val >= 16.0:
+        return {"grade": "A", "label": "Indian A", "min_screen": 17.0}
+    elif screen_val >= 15.0:
+        return {"grade": "B", "label": "Indian B", "min_screen": 16.0}
+    elif screen_val >= 14.0:
+        return {"grade": "C", "label": "Indian C", "min_screen": 15.0}
+    elif screen_val >= 12.6:
+        return {"grade": "BB", "label": "Indian BB", "min_screen": 14.0}
+    elif 9.5 <= screen_val < 12.6:
+        return {"grade": "PB", "label": "Indian PB", "min_screen": 10.0}
     else:
-        return {"grade": "PB", "label": "Africa/India PB", "min_screen": None}
+        return {"grade": "Triage", "label": "Indian Triage", "min_screen": None}
 
 
 def africa_india_grade_for_length_mm(length_mm):
-    """Map a bean/screen aperture in mm to the Africa and India grading system."""
+    """Map a bean/screen aperture in mm to the Indian grading system."""
     if length_mm is None:
-        return {"grade": "PB", "label": "Africa/India PB", "min_screen": None}
+        return {"grade": "Triage", "label": "Indian Triage", "min_screen": None}
     
-    screen_64 = mm_to_screen_64(length_mm)
-    return africa_india_grade_for_screen_64(screen_64)
+    length_val = float(length_mm)
+    # Using boundaries adjusted for custom Grade A (6.35 - 6.75 mm):
+    if length_val >= 6.76:
+        return {"grade": "AA", "label": "Indian AA", "min_screen": 18.0}
+    elif length_val >= 6.35:
+        return {"grade": "A", "label": "Indian A", "min_screen": 17.0}
+    elif length_val >= 5.95:
+        return {"grade": "B", "label": "Indian B", "min_screen": 16.0}
+    elif length_val >= 5.56:
+        return {"grade": "C", "label": "Indian C", "min_screen": 15.0}
+    elif length_val >= 5.00:
+        return {"grade": "BB", "label": "Indian BB", "min_screen": 14.0}
+    elif 3.97 <= length_val <= 5.16:
+        return {"grade": "PB", "label": "Indian PB", "min_screen": 10.0}
+    else:
+        return {"grade": "Triage", "label": "Indian Triage", "min_screen": None}
 
 
 # ── Density Calculator ─────────────────────────────────────────────────────
@@ -194,8 +221,8 @@ def compute_density(sample_weight_g, bean_count):
 
 def classify_grade(detections, bean_count=None):
     """
-    Assign a quality grade (AA → PB) based on average bean length (mm)
-    mapped to the Africa and India grading system.
+    Assign a quality grade (AA → Triage) based on average bean length (mm)
+    mapped to the Indian grading system.
 
     Args:
         detections (list[dict]): Enriched detections from the detector.
@@ -246,22 +273,22 @@ def classify_grade(detections, bean_count=None):
                 l = max(float(sm["width"]), float(sm["height"]))
                 bean_lengths.append(l)
 
-    grade = "PB"
-    label = "Africa/India PB"
+    grade = "Triage"
+    label = "Indian Triage"
     avg_length = None
     avg_screen_64 = None
 
     if bean_lengths:
         avg_length = sum(bean_lengths) / len(bean_lengths)
         avg_screen_64 = mm_to_screen_64(avg_length)
-        grade_row = africa_india_grade_for_screen_64(avg_screen_64)
+        grade_row = africa_india_grade_for_length_mm(avg_length)
         grade = grade_row["grade"]
         label = grade_row["label"]
 
     return {
         "grade": grade,
         "label": label,
-        "grade_basis": "africa_india_screen_length",
+        "grade_basis": "indian_screen_length",
         "screen_64": avg_screen_64,
         "avg_length_mm": round(avg_length, 2) if avg_length is not None else None,
         "defect_count": defect_count,

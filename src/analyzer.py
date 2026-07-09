@@ -186,23 +186,34 @@ class BeanAnalyzer:
             color_info = self.get_bean_color(image, bbox)
             size_info = self.get_bean_size(bbox, image.shape)
             
-            beans.append({
+            bean_data = {
                 'id': i + 1,
                 'class': detection['class'],
                 'confidence': detection['confidence'],
                 'bbox': bbox,
                 'color': color_info,
                 'size': size_info
-            })
+            }
+            # Copy over any extra fields from detector (e.g. polygon, sam2_mask)
+            for k, v in detection.items():
+                if k not in bean_data:
+                    bean_data[k] = v
+            beans.append(bean_data)
         
         # Draw annotated image with color info
         if save_output:
             annotated = image.copy()
             for bean in beans:
                 x1, y1, x2, y2 = map(int, bean['bbox'])
+                poly = bean.get('polygon')
+                draw_color = (0, 255, 0) if bean['class'] == 'coffee_bean' else (0, 165, 255)
                 
-                # Draw bounding box
-                cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                # Draw high-fidelity polygon boundaries if available
+                if poly and len(poly) >= 3 and isinstance(poly[0], (list, tuple)):
+                    pts = np.array(poly, dtype=np.int32).reshape((-1, 1, 2))
+                    cv2.polylines(annotated, [pts], isClosed=True, color=draw_color, thickness=2)
+                else:
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), draw_color, 2)
                 
                 # Label with ID and color
                 color_name = bean['color'].get('color_name', 'Unknown')
@@ -210,7 +221,7 @@ class BeanAnalyzer:
                 label = f"Bean {bean['id']}: {color_name} ({size_class})"
                 
                 cv2.putText(annotated, label, (x1, y1 - 10),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, draw_color, 2)
             
             if save_output:
                 cv2.imwrite(save_output, annotated)

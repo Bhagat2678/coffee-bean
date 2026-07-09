@@ -58,9 +58,16 @@ def get_valid_image_path(auto_select=None):
 
 
 def main():
-    auto_image = None
-    if len(sys.argv) > 1:
-        auto_image = sys.argv[1]
+    import argparse
+    parser = argparse.ArgumentParser(description="Coffee Bean Analyzer CLI")
+    parser.add_argument("image", nargs="?", default=None, help="Optional image filename in data/raw/")
+    parser.add_argument("--sam2", action="store_true", help="Enable SAM 2 segmentation")
+    args = parser.parse_args()
+
+    auto_image = args.image
+    use_sam2 = args.sam2
+
+    if auto_image:
         print(f"📸 Processing: {auto_image}")
 
     filename = get_valid_image_path(auto_select=auto_image)
@@ -72,7 +79,7 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     print(f"\n🤖 Loading model: {MODEL_PATH}")
-    detector = ObjectDetector(MODEL_PATH)
+    detector = ObjectDetector(MODEL_PATH, use_sam2=use_sam2)
 
     print(f"🔍 Processing '{filename}'...")
     print(f"🔄 Analyzing color, size, and bean count...\n")

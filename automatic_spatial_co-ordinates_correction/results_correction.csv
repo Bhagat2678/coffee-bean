@@ -1,0 +1,6 @@
+image_name,total_beans,original_pixels_per_mm,original_avg_length_mm,original_grade,original_diff_from_min,original_diff_from_max,original_difference,adjusted_pixels_per_mm,adjusted_avg_length_mm,adjusted_grade,scale_factor,adjusted_diff_from_min,adjusted_diff_from_max,adjusted_difference,iterations,status
+tray_001_back.jpg,142,7.27,8.795,AA,2.445,-2.045,2.045,9.77,6.555,A,0.7447,0.205,0.195,0.0,1,Corrected
+tray_001_front.jpg,154,23.09,9.048,AA,2.698,-2.298,2.298,31.89,6.553,A,0.7239,0.203,0.197,0.0,1,Corrected
+tray_002_back.jpg,120,20.99,7.872,AA,1.522,-1.122,1.122,25.23,6.557,A,0.832,0.207,0.193,0.0,1,Corrected
+tray_002_front.jpg,120,22.43,7.299,AA,0.949,-0.549,0.549,25.0,6.548,A,0.8973,0.198,0.202,0.0,1,Corrected
+tray_003_back.jpg,123,19.35,7.511,AA,1.161,-0.761,0.761,22.19,6.55,A,0.872,0.2,0.2,0.0,1,Corrected

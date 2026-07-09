@@ -54,8 +54,8 @@ MAX_ASPECT = 4.0
 IOU = 0.3
 BOX_SHRINK_RATIO = 0.15
 
-# Global detector instance
-DETECTOR = ObjectDetector(MODEL_PATH)
+# Global detector instance (initialized with SAM 2 support)
+DETECTOR = ObjectDetector(MODEL_PATH, use_sam2=True)
 
 # ArcFace mapper instance (lazy)
 _arcface_mapper = None
@@ -91,6 +91,8 @@ def _run_detection(upload_path, uid, ext, manual_crop=False):
     req_min_out = _get_request_float('min_confidence_output', req_conf)
     req_iou = _get_request_float('iou', IOU)
 
+    req_use_sam2 = request.form.get('use_sam2', 'true') == 'true'
+
     result = DETECTOR.detect_objects(
         upload_path,
         confidence_threshold=req_conf,
@@ -103,6 +105,7 @@ def _run_detection(upload_path, uid, ext, manual_crop=False):
         max_aspect=MAX_ASPECT,
         box_shrink_ratio=BOX_SHRINK_RATIO,
         manual_crop=manual_crop,
+        use_sam2=req_use_sam2,
         debug=False
     )
 

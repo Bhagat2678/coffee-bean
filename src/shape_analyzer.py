@@ -115,13 +115,23 @@ class ShapeAnalyzer:
         # Symmetry from upper/lower boundary distances
         symmetry = self._compute_symmetry(upper_dists, lower_dists)
 
-        # Convert pixel measurements to mm (use average of x/y scale for diagonal)
-        px_per_mm_avg = (abs(px_per_mm_x) + abs(px_per_mm_y)) / 2.0
-        if px_per_mm_avg <= 0:
-            px_per_mm_avg = 1.0  # safety fallback — result will be in pixels
+        # Convert pixel measurements to mm using directional calibration
+        angle_rad = math.radians(angle)
+        px_per_mm_major = math.sqrt(
+            (px_per_mm_x * math.cos(angle_rad)) ** 2 +
+            (px_per_mm_y * math.sin(angle_rad)) ** 2
+        )
+        px_per_mm_minor = math.sqrt(
+            (px_per_mm_x * math.sin(angle_rad)) ** 2 +
+            (px_per_mm_y * math.cos(angle_rad)) ** 2
+        )
+        if px_per_mm_major <= 0:
+            px_per_mm_major = 1.0
+        if px_per_mm_minor <= 0:
+            px_per_mm_minor = 1.0
 
-        midline_length_mm = round(major_len / px_per_mm_avg, 2)
-        max_width_mm = round(minor_len / px_per_mm_avg, 2)
+        midline_length_mm = round(major_len / px_per_mm_major, 2)
+        max_width_mm = round(minor_len / px_per_mm_minor, 2)
         curvature_deg = round(curvature_deg, 2)
         symmetry = round(symmetry, 4)
 
