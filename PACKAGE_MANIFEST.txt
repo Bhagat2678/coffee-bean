@@ -1,9 +1,9 @@
 ==================================================
 COFFEE BEAN CLASSIFIER - PACKAGE MANIFEST
-Generated: 2026-07-07 22:38:21
+Generated: 2026-07-10 01:23:12
 ==================================================
 
-INCLUDED FILES (35):
+INCLUDED FILES (34):
   .gitignore                                                   0.6 KB
   CoffeeBeanAnalyzer.spec                                      0.8 KB
   README.md                                                    6.6 KB
@@ -13,34 +13,33 @@ INCLUDED FILES (35):
   launcher.py                                                 11.5 KB
   main.py                                                      4.0 KB
   models/best.pt                                            6126.4 KB
-  reports/AI_Agents/2026-07-07.md                              1.7 KB
+  reports/AI_Agents/2026-07-07.md                              1.8 KB
   reports/Aaarya/README.md                                     0.2 KB
   reports/Achyut/README.md                                     0.2 KB
   reports/Bhagat/README.md                                     0.2 KB
   reports/README.md                                            1.1 KB
-  reports/cloud_deployment_guide.md                            4.1 KB
+  reports/cloud_deployment_guide.md                            4.2 KB
   requirements.txt                                             0.3 KB
   results/.gitkeep                                             0.1 KB
   scripts/add_dataset.py                                       7.0 KB
-  scripts/download_sam2.py                                     2.7 KB
+  scripts/download_sam2.py                                     2.8 KB
   scripts/evaluate.py                                          5.6 KB
   scripts/infer.py                                             9.3 KB
   scripts/train.py                                             3.1 KB
-  scripts/verify_sam2.py                                       8.5 KB
+  scripts/verify_sam2.py                                       8.6 KB
   src/__init__.py                                              0.1 KB
   src/analyzer.py                                             10.7 KB
   src/arcface.py                                              11.7 KB
   src/cvat_converter.py                                        8.4 KB
-  src/detector.py                                             69.4 KB
-  src/grading.py                                              14.7 KB
-  src/shape_analyzer.py                                       14.9 KB
+  src/detector.py                                             76.8 KB
+  src/grading.py                                              14.3 KB
+  src/shape_analyzer.py                                       15.2 KB
   website/app.py                                               9.4 KB
   website/static/css/style.css                                32.5 KB
   website/static/js/app.js                                    25.4 KB
   website/templates/index.html                                19.7 KB
-  website/uploads/.gitkeep                                     0.0 KB
 
-TOTAL SIZE: 6.28 MB
+TOTAL SIZE: 6.29 MB
 
 EXCLUDED (intentionally):
   - All image/video files (*.jpg, *.png, *.mp4, etc.)

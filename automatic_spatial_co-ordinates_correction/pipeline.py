@@ -24,12 +24,12 @@ def get_grade_range(grade_char, grade_txt_path):
     """
     defaults = {
         "PB": (3.97, 5.16),
-        "AA": (7.5, 99.0),
-        "A": (6.75, 7.49),
-        "B": (6.35, 6.74),
-        "C": (5.95, 6.34),
-        "BB": (5.56, 5.94),
-        "Triage": (0.0, 5.55)
+        "AA": (6.76, 99.0),
+        "A": (6.35, 6.75),
+        "B": (5.95, 6.34),
+        "C": (5.56, 5.94),
+        "BB": (5.00, 5.55),
+        "Triage": (0.0, 4.99)
     }
     
     if not os.path.exists(grade_txt_path):
@@ -107,6 +107,9 @@ def main():
     parser.add_argument("--step-size", type=float, default=0.005, help="Step size for minute template adjustments")
     parser.add_argument("--initial-only", action="store_true", help="Only run initial grading pass and export CSV, skipping adjustments loop")
     parser.add_argument("--skip-validation", action="store_true", help="Run corrections (Steps 3-5) but skip the folder-wide validation pass (Steps 6-7)")
+    parser.add_argument("--limit", type=int, default=None, help="Limit the number of images to process for testing")
+    parser.add_argument("--min-len", type=float, default=None, help="Custom minimum length range in mm")
+    parser.add_argument("--max-len", type=float, default=None, help="Custom maximum length range in mm")
     args = parser.parse_args()
 
     # Determine input directory path
@@ -127,6 +130,10 @@ def main():
     # Get grade range
     grade_txt_path = ROOT_DIR / "grading" / "Grade.txt"
     min_len, max_len = get_grade_range(args.grade, grade_txt_path)
+    if args.min_len is not None:
+        min_len = args.min_len
+    if args.max_len is not None:
+        max_len = args.max_len
     print(f"📐 Target Length Range for Grade '{args.grade}': {min_len}mm - {max_len}mm")
 
     # Load model
@@ -144,6 +151,10 @@ def main():
     if not images:
         print(f"❌ Error: No images found in '{folder_path}'")
         sys.exit(1)
+        
+    if args.limit:
+        print(f"⚠️ Limiting process to first {args.limit} images for testing.")
+        images = images[:args.limit]
         
     print(f"📸 Found {len(images)} images to process.")
 
@@ -168,13 +179,16 @@ def main():
         "original_pixels_per_mm",
         "original_avg_length_mm",
         "original_grade",
+        "original_diff_from_min",
+        "original_diff_from_max",
+        "original_difference",
         "adjusted_pixels_per_mm",
         "adjusted_avg_length_mm",
         "adjusted_grade",
         "scale_factor",
-        "diff_from_min",
-        "diff_from_max",
-        "difference",
+        "adjusted_diff_from_min",
+        "adjusted_diff_from_max",
+        "adjusted_difference",
         "iterations",
         "status"
     ]
@@ -210,14 +224,16 @@ def main():
             adj_grade = orig_grade
             iterations = 0
             status = "Initial Pass Only"
-        elif orig_grade == args.grade and min_len <= orig_avg_len <= max_len:
-            print(f"  ✅ Image is already in '{args.grade}' range. No adjustment needed.")
+            adjustments[img_name] = scale_factor
+        elif (args.min_len is not None or orig_grade == args.grade) and min_len <= orig_avg_len <= max_len:
+            print(f"  ✅ Image is already in target range ({min_len}mm - {max_len}mm). No adjustment needed.")
             scale_factor = 1.0
             adj_ppm = orig_ppm
             adj_avg_len = orig_avg_len
             adj_grade = orig_grade
             iterations = 0
             status = "Already OK"
+            adjustments[img_name] = scale_factor
         else:
             if orig_avg_len == 0.0 or orig_ppm == 0.0:
                 print(f"  ❌ Calibration failed (No template/plate detected). Skipping adjustments.")
@@ -230,7 +246,9 @@ def main():
                 adjustments[img_name] = scale_factor
             else:
                 print(f"  ⚠️ Grade or length mismatch. Starting iterative adjustments (Step 3)...")
-                scale_factor = adjustments.get(img_name, 1.0)
+                # Proportional guess based on initial run length to speed up convergence
+                target_len = (min_len + max_len) / 2.0
+                scale_factor = target_len / orig_avg_len
                 iterations = 0
                 success = False
                 adj_ppm = orig_ppm
@@ -257,21 +275,16 @@ def main():
                         break
 
                     # Check if it satisfies requirements
-                    if adj_grade == args.grade and min_len <= adj_avg_len <= max_len:
+                    if (args.min_len is not None or adj_grade == args.grade) and min_len <= adj_avg_len <= max_len:
                         print(f"    ✅ Success on iteration {iter_count}! Adjusted Scale = {scale_factor:.4f}")
                         success = True
                         iterations = iter_count
                         status = "Corrected"
                         break
 
-                    # Approach target length range:
-                    if adj_avg_len < min_len:
-                        scale_factor += args.step_size
-                    elif adj_avg_len > max_len:
-                        scale_factor -= args.step_size
-                    else:
-                        print(f"    ⚠️ Warning: Length {adj_avg_len:.2f}mm in bounds, but grade '{adj_grade}' mismatch.")
-                        break
+                    # Approach target length range using proportional feedback:
+                    target_len = (min_len + max_len) / 2.0
+                    scale_factor = scale_factor * (target_len / adj_avg_len)
 
                 if not success:
                     print(f"  ❌ Failed to correct coordinates within {args.max_iter} iterations.")
@@ -282,9 +295,13 @@ def main():
                 adjustments[img_name] = scale_factor
 
         # Differences (Step 2)
-        diff_min = round(adj_avg_len - min_len, 3)
-        diff_max = round(max_len - adj_avg_len, 3)
-        diff_overall = compute_difference(adj_avg_len, min_len, max_len)
+        orig_diff_min = round(orig_avg_len - min_len, 3)
+        orig_diff_max = round(max_len - orig_avg_len, 3)
+        orig_diff_overall = compute_difference(orig_avg_len, min_len, max_len)
+
+        adj_diff_min = round(adj_avg_len - min_len, 3)
+        adj_diff_max = round(max_len - adj_avg_len, 3)
+        adj_diff_overall = compute_difference(adj_avg_len, min_len, max_len)
 
         csv_rows.append({
             "image_name": img_name,
@@ -292,13 +309,16 @@ def main():
             "original_pixels_per_mm": round(orig_ppm, 3) if orig_ppm else 0.0,
             "original_avg_length_mm": round(orig_avg_len, 3),
             "original_grade": orig_grade,
+            "original_diff_from_min": orig_diff_min,
+            "original_diff_from_max": orig_diff_max,
+            "original_difference": orig_diff_overall,
             "adjusted_pixels_per_mm": round(adj_ppm, 3) if adj_ppm else 0.0,
             "adjusted_avg_length_mm": round(adj_avg_len, 3),
             "adjusted_grade": adj_grade,
             "scale_factor": round(scale_factor, 4),
-            "diff_from_min": diff_min,
-            "diff_from_max": diff_max,
-            "difference": diff_overall,
+            "adjusted_diff_from_min": adj_diff_min,
+            "adjusted_diff_from_max": adj_diff_max,
+            "adjusted_difference": adj_diff_overall,
             "iterations": iterations,
             "status": status
         })
@@ -348,9 +368,10 @@ def main():
         validated_lengths.append(avg_len)
 
         in_range = min_len <= avg_len <= max_len
-        print(f"  • {img_name}: Length = {avg_len:.2f}mm, Grade = {grade} -> {'✅ OK' if (grade == args.grade and in_range) else '❌ OUT OF RANGE'}")
+        grade_ok = (args.min_len is not None or grade == args.grade)
+        print(f"  • {img_name}: Length = {avg_len:.2f}mm, Grade = {grade} -> {'✅ OK' if (grade_ok and in_range) else '❌ OUT OF RANGE'}")
         
-        if grade != args.grade or not in_range:
+        if not grade_ok or not in_range:
             all_valid = False
 
     # Calculate overall stats
