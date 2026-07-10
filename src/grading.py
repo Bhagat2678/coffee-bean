@@ -149,17 +149,20 @@ def africa_india_grade_for_screen_64(screen_64):
         return {"grade": "Triage", "label": "Indian Triage", "min_screen": None}
 
     screen_val = float(screen_64)
-    # Using boundaries adjusted for custom Grade A (6.35 - 6.75 mm):
-    if screen_val >= 17.0:
+    if screen_val >= 19.0:
+        return {"grade": "AAA", "label": "Indian AAA", "min_screen": 19.0}
+    elif screen_val >= 18.0:
         return {"grade": "AA", "label": "Indian AA", "min_screen": 18.0}
-    elif screen_val >= 16.0:
+    elif screen_val >= 17.0:
         return {"grade": "A", "label": "Indian A", "min_screen": 17.0}
+    elif screen_val >= 16.0:
+        return {"grade": "A", "label": "Indian A", "min_screen": 16.0}
     elif screen_val >= 15.0:
-        return {"grade": "B", "label": "Indian B", "min_screen": 16.0}
+        return {"grade": "B", "label": "Indian B", "min_screen": 15.0}
     elif screen_val >= 14.0:
-        return {"grade": "C", "label": "Indian C", "min_screen": 15.0}
+        return {"grade": "C", "label": "Indian C", "min_screen": 14.0}
     elif screen_val >= 12.6:
-        return {"grade": "BB", "label": "Indian BB", "min_screen": 14.0}
+        return {"grade": "BB", "label": "Indian BB", "min_screen": 12.6}
     elif 9.5 <= screen_val < 12.6:
         return {"grade": "PB", "label": "Indian PB", "min_screen": 10.0}
     else:
@@ -172,18 +175,22 @@ def africa_india_grade_for_length_mm(length_mm):
         return {"grade": "Triage", "label": "Indian Triage", "min_screen": None}
     
     length_val = float(length_mm)
-    # Using boundaries adjusted for custom Grade A (6.35 - 6.75 mm):
-    if length_val >= 6.76:
+    # Screen 19+ (≥7.54mm) = AAA, Screen 18-18.5 (7.14-7.53mm) = AA,
+    # Screen 16-17 (6.35-7.13mm) = A, Screen 15 (5.95-6.34mm) = B,
+    # Screen 14 (5.56-5.94mm) = C, etc.
+    if length_val >= 7.54:
+        return {"grade": "AAA", "label": "Indian AAA", "min_screen": 19.0}
+    elif length_val >= 7.14:
         return {"grade": "AA", "label": "Indian AA", "min_screen": 18.0}
     elif length_val >= 6.35:
-        return {"grade": "A", "label": "Indian A", "min_screen": 17.0}
+        return {"grade": "A", "label": "Indian A", "min_screen": 16.0}
     elif length_val >= 5.95:
-        return {"grade": "B", "label": "Indian B", "min_screen": 16.0}
+        return {"grade": "B", "label": "Indian B", "min_screen": 15.0}
     elif length_val >= 5.56:
-        return {"grade": "C", "label": "Indian C", "min_screen": 15.0}
+        return {"grade": "C", "label": "Indian C", "min_screen": 14.0}
     elif length_val >= 5.00:
-        return {"grade": "BB", "label": "Indian BB", "min_screen": 14.0}
-    elif 3.97 <= length_val <= 5.16:
+        return {"grade": "BB", "label": "Indian BB", "min_screen": 12.6}
+    elif 3.97 <= length_val < 5.00:
         return {"grade": "PB", "label": "Indian PB", "min_screen": 10.0}
     else:
         return {"grade": "Triage", "label": "Indian Triage", "min_screen": None}
