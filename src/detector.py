@@ -375,20 +375,8 @@ class ObjectDetector:
         if crop_info and not crop_info.get('applied'):
             return None
 
-        # Try to detect the white plate contour inside the cropped image first
-        # This handles cases where there's a gap around the tray
-        contour = self._detect_template_contour(image)
-        if contour is not None:
-            # We found the white template contour! Use its bounding box dimensions.
-            x, y, w, h = cv2.boundingRect(contour)
-            plate_width_px = w
-            plate_height_px = h
-            print(f"   [CALIBRATION] Detected template contour inside cropped image: {w}x{h}px")
-        else:
-            # Fallback to the full cropped image shape
-            plate_width_px = max(1, image.shape[1])
-            plate_height_px = max(1, image.shape[0])
-            print(f"   [CALIBRATION] Could not detect template contour inside cropped image; falling back to full image shape: {plate_width_px}x{plate_height_px}px")
+        plate_width_px = max(1, image.shape[1])
+        plate_height_px = max(1, image.shape[0])
 
         if plate_height_px > plate_width_px:
             pixels_per_mm_y = plate_height_px / self.TEMPLATE_HEIGHT_MM
