@@ -1,6 +1,6 @@
 ==================================================
 COFFEE BEAN CLASSIFIER - PACKAGE MANIFEST
-Generated: 2026-07-10 01:23:12
+Generated: 2026-07-10 15:33:06
 ==================================================
 
 INCLUDED FILES (34):
@@ -32,7 +32,7 @@ INCLUDED FILES (34):
   src/arcface.py                                              11.7 KB
   src/cvat_converter.py                                        8.4 KB
   src/detector.py                                             76.8 KB
-  src/grading.py                                              14.3 KB
+  src/grading.py                                              14.7 KB
   src/shape_analyzer.py                                       15.2 KB
   website/app.py                                               9.4 KB
   website/static/css/style.css                                32.5 KB

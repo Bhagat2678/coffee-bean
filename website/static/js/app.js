@@ -73,13 +73,14 @@ let frontFile = null
 let backFile = null
 let toastTimer = null
 
-// Crop state variables
+// Perspective Corner picker variables
 let originalFrontFile = null
 let originalBackFile = null
-let frontManualCrop = false
-let backManualCrop = false
-let cropperInstance = null
-let currentCropSide = null
+let frontCorners = null; // [[x, y], [x, y], [x, y], [x, y]] in original resolution
+let backCorners = null;  // [[x, y], [x, y], [x, y], [x, y]] in original resolution
+let currentCropSide = null; // 'front' or 'back'
+let currentPoints = []; // [{x, y}] in screen-space canvas coordinates
+let activeDragIndex = -1;
 
 
 // ── Utilities ──
@@ -353,7 +354,11 @@ function renderArcFace(data) {
 }
 
 
-// ── File handling ──
+function updateAnalyzeButtonState() {
+  const hasFrontCorners = (frontCorners && frontCorners.length === 4);
+  const hasBackCorners = (!backFile || (backCorners && backCorners.length === 4));
+  analyzeBtn.disabled = !frontFile || !hasFrontCorners || !hasBackCorners;
+}
 
 function handleFile(file, side) {
   const allowed = ['image/png', 'image/jpeg']
@@ -369,42 +374,54 @@ function handleFile(file, side) {
   if (side === 'front') {
     frontFile = file
     originalFrontFile = file
-    frontManualCrop = false
+    frontCorners = null
+    cropFrontBtn.textContent = 'Select Corners'
+    cropFrontBtn.classList.remove('btn-success')
     previewFrontImg.src = URL.createObjectURL(file)
     previewFront.classList.remove('hidden')
     dropFront.classList.add('hidden')
     if (cropFrontBtn) cropFrontBtn.classList.remove('hidden')
-    analyzeBtn.disabled = false
   } else {
     backFile = file
     originalBackFile = file
-    backManualCrop = false
+    backCorners = null
+    cropBackBtn.textContent = 'Select Corners'
+    cropBackBtn.classList.remove('btn-success')
     previewBackImg.src = URL.createObjectURL(file)
     previewBack.classList.remove('hidden')
     dropBack.classList.add('hidden')
     if (cropBackBtn) cropBackBtn.classList.remove('hidden')
   }
+  updateAnalyzeButtonState()
 }
 
 function removeFile(side) {
   if (side === 'front') {
     frontFile = null
     originalFrontFile = null
-    frontManualCrop = false
+    frontCorners = null
     fileFront.value = ''
     previewFront.classList.add('hidden')
     dropFront.classList.remove('hidden')
-    if (cropFrontBtn) cropFrontBtn.classList.add('hidden')
-    analyzeBtn.disabled = true
+    if (cropFrontBtn) {
+      cropFrontBtn.classList.add('hidden')
+      cropFrontBtn.textContent = 'Select Corners'
+      cropFrontBtn.classList.remove('btn-success')
+    }
   } else {
     backFile = null
     originalBackFile = null
-    backManualCrop = false
+    backCorners = null
     fileBack.value = ''
     previewBack.classList.add('hidden')
     dropBack.classList.remove('hidden')
-    if (cropBackBtn) cropBackBtn.classList.add('hidden')
+    if (cropBackBtn) {
+      cropBackBtn.classList.add('hidden')
+      cropBackBtn.textContent = 'Select Corners'
+      cropBackBtn.classList.remove('btn-success')
+    }
   }
+  updateAnalyzeButtonState()
 }
 
 
@@ -496,10 +513,14 @@ analyzeBtn.addEventListener('click', async () => {
 
   const formData = new FormData()
   formData.append('front_image', frontFile)
-  formData.append('front_manual_crop', frontManualCrop ? 'true' : 'false')
+  if (frontCorners) {
+    formData.append('front_corners', JSON.stringify(frontCorners))
+  }
   if (backFile) {
     formData.append('back_image', backFile)
-    formData.append('back_manual_crop', backManualCrop ? 'true' : 'false')
+    if (backCorners) {
+      formData.append('back_corners', JSON.stringify(backCorners))
+    }
   }
 
   // Sample weight
@@ -705,86 +726,283 @@ if (annotatedImg) {
 
 resetStats()
 
-// ── Crop Modal Logic ──
+// ── Corner Picker Canvas Overlay Logic ──
+const cornerPickerCanvas = document.getElementById('cornerPickerCanvas');
+const resetCornersBtn = document.getElementById('resetCornersBtn');
 
 function openCropModal(side) {
-  currentCropSide = side
-  const fileToCrop = side === 'front' ? originalFrontFile : originalBackFile
-  if (!fileToCrop) return
+  currentCropSide = side;
+  const fileToSelect = side === 'front' ? originalFrontFile : originalBackFile;
+  if (!fileToSelect) return;
 
-  cropImage.src = URL.createObjectURL(fileToCrop)
-  cropModal.classList.remove('hidden')
+  cropImage.src = URL.createObjectURL(fileToSelect);
+  cropModal.classList.remove('hidden');
 
-  if (cropperInstance) {
-    cropperInstance.destroy()
-  }
+  cropImage.onload = () => {
+    // Canvas layout dimensions
+    const rect = cropImage.getBoundingClientRect();
+    cornerPickerCanvas.width = rect.width;
+    cornerPickerCanvas.height = rect.height;
 
-  cropperInstance = new Cropper(cropImage, {
-    viewMode: 1,
-    autoCropArea: 0.9,
-    responsive: true,
-    checkOrientation: false
-  })
+    // Load existing corners if they exist
+    const existing = side === 'front' ? frontCorners : backCorners;
+    if (existing && existing.length === 4) {
+      const scaleX = rect.width / cropImage.naturalWidth;
+      const scaleY = rect.height / cropImage.naturalHeight;
+      currentPoints = existing.map(pt => ({
+        x: pt[0] * scaleX,
+        y: pt[1] * scaleY
+      }));
+      saveCropBtn.disabled = false;
+    } else {
+      currentPoints = [];
+      saveCropBtn.disabled = true;
+    }
+    drawCanvas();
+  };
 }
 
 function closeCropModalFn() {
-  cropModal.classList.add('hidden')
-  if (cropperInstance) {
-    cropperInstance.destroy()
-    cropperInstance = null
+  cropModal.classList.add('hidden');
+  cropImage.src = '';
+  currentPoints = [];
+  activeDragIndex = -1;
+}
+
+function drawCanvas() {
+  const ctx = cornerPickerCanvas.getContext('2d');
+  ctx.clearRect(0, 0, cornerPickerCanvas.width, cornerPickerCanvas.height);
+  const numPoints = currentPoints.length;
+
+  if (numPoints > 0) {
+    ctx.beginPath();
+    ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
+    for (let i = 1; i < numPoints; i++) {
+      ctx.lineTo(currentPoints[i].x, currentPoints[i].y);
+    }
+    if (numPoints === 4) {
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(212, 165, 116, 0.15)';
+      ctx.fill();
+    }
+    ctx.strokeStyle = '#D4A574';
+    ctx.lineWidth = 3;
+    ctx.stroke();
   }
-  cropImage.src = ''
+
+  const labels = ['1: TL', '2: TR', '3: BR', '4: BL'];
+  currentPoints.forEach((pt, idx) => {
+    // Marker shadow
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 14, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.fill();
+
+    // Marker
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 12, 0, 2 * Math.PI);
+    ctx.fillStyle = '#D4A574';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+
+    // Number text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 11px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText((idx + 1).toString(), pt.x, pt.y);
+
+    // Marker tooltip
+    ctx.font = '10px Inter, sans-serif';
+    const textWidth = ctx.measureText(labels[idx]).width;
+    ctx.fillStyle = 'rgba(20, 20, 20, 0.75)';
+    ctx.fillRect(pt.x - textWidth/2 - 4, pt.y - 28, textWidth + 8, 14);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(labels[idx], pt.x, pt.y - 21);
+  });
+}
+
+function validateQuadrilateral(pts) {
+  if (pts.length !== 4) return { valid: false, reason: "Please place exactly 4 corners." };
+
+  const v0 = { x: pts[1][0] - pts[0][0], y: pts[1][1] - pts[0][1] };
+  const v1 = { x: pts[2][0] - pts[1][0], y: pts[2][1] - pts[1][1] };
+  const v2 = { x: pts[3][0] - pts[2][0], y: pts[3][1] - pts[2][1] };
+  const v3 = { x: pts[0][0] - pts[3][0], y: pts[0][1] - pts[3][1] };
+
+  const c0 = v0.x * v1.y - v0.y * v1.x;
+  const c1 = v1.x * v2.y - v1.y * v2.x;
+  const c2 = v2.x * v3.y - v2.y * v3.x;
+  const c3 = v3.x * v0.y - v3.y * v0.x;
+
+  const hasPos = (c0 > 0 || c1 > 0 || c2 > 0 || c3 > 0);
+  const hasNeg = (c0 < 0 || c1 < 0 || c2 < 0 || c3 < 0);
+
+  if (hasPos && hasNeg) {
+    return {
+      valid: false,
+      reason: "Self-intersecting or concave selection. Click in clockwise order: Top-Left, Top-Right, Bottom-Right, Bottom-Left."
+    };
+  }
+
+  const topW = Math.hypot(v0.x, v0.y);
+  const botW = Math.hypot(v2.x, v2.y);
+  const leftH = Math.hypot(v3.x, v3.y);
+  const rightH = Math.hypot(v1.x, v1.y);
+
+  const avgW = (topW + botW) / 2;
+  const avgH = (leftH + rightH) / 2;
+  const ratio = avgW / avgH;
+
+  if (ratio < 0.9 || ratio > 2.8) {
+    return {
+      valid: true,
+      warning: `Warning: Atypical tray shape aspect ratio (${ratio.toFixed(2)}). Standard calibration tray aspect ratio is ~1.59.`
+    };
+  }
+  return { valid: true };
+}
+
+// Canvas events
+cornerPickerCanvas.addEventListener('mousedown', (e) => {
+  const rect = cornerPickerCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  let dragIdx = -1;
+  const tolerance = 18;
+  for (let i = 0; i < currentPoints.length; i++) {
+    if (Math.hypot(currentPoints[i].x - x, currentPoints[i].y - y) < tolerance) {
+      dragIdx = i;
+      break;
+    }
+  }
+
+  if (dragIdx !== -1) {
+    activeDragIndex = dragIdx;
+  } else if (currentPoints.length < 4) {
+    currentPoints.push({ x, y });
+    drawCanvas();
+    saveCropBtn.disabled = (currentPoints.length !== 4);
+  }
+});
+
+cornerPickerCanvas.addEventListener('mousemove', (e) => {
+  if (activeDragIndex === -1) return;
+  const rect = cornerPickerCanvas.getBoundingClientRect();
+  const x = Math.max(0, Math.min(e.clientX - rect.left, cornerPickerCanvas.width));
+  const y = Math.max(0, Math.min(e.clientY - rect.top, cornerPickerCanvas.height));
+  currentPoints[activeDragIndex] = { x, y };
+  drawCanvas();
+});
+
+cornerPickerCanvas.addEventListener('mouseup', () => {
+  activeDragIndex = -1;
+});
+
+cornerPickerCanvas.addEventListener('mouseleave', () => {
+  activeDragIndex = -1;
+});
+
+// Touch support
+cornerPickerCanvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 0) return;
+  const touch = e.touches[0];
+  const rect = cornerPickerCanvas.getBoundingClientRect();
+  const x = touch.clientX - rect.left;
+  const y = touch.clientY - rect.top;
+
+  let dragIdx = -1;
+  const tolerance = 24;
+  for (let i = 0; i < currentPoints.length; i++) {
+    if (Math.hypot(currentPoints[i].x - x, currentPoints[i].y - y) < tolerance) {
+      dragIdx = i;
+      break;
+    }
+  }
+
+  if (dragIdx !== -1) {
+    activeDragIndex = dragIdx;
+  } else if (currentPoints.length < 4) {
+    currentPoints.push({ x, y });
+    drawCanvas();
+    saveCropBtn.disabled = (currentPoints.length !== 4);
+  }
+});
+
+cornerPickerCanvas.addEventListener('touchmove', (e) => {
+  if (activeDragIndex === -1 || e.touches.length === 0) return;
+  const touch = e.touches[0];
+  const rect = cornerPickerCanvas.getBoundingClientRect();
+  const x = Math.max(0, Math.min(touch.clientX - rect.left, cornerPickerCanvas.width));
+  const y = Math.max(0, Math.min(touch.clientY - rect.top, cornerPickerCanvas.height));
+  currentPoints[activeDragIndex] = { x, y };
+  drawCanvas();
+});
+
+cornerPickerCanvas.addEventListener('touchend', () => {
+  activeDragIndex = -1;
+});
+
+resetCornersBtn.addEventListener('click', () => {
+  currentPoints = [];
+  drawCanvas();
+  saveCropBtn.disabled = true;
+});
+
+if (saveCropBtn) {
+  saveCropBtn.addEventListener('click', () => {
+    if (currentPoints.length !== 4) return;
+
+    const scaleX = cropImage.naturalWidth / cornerPickerCanvas.width;
+    const scaleY = cropImage.naturalHeight / cornerPickerCanvas.height;
+    const originalPoints = currentPoints.map(pt => [
+      Math.round(pt.x * scaleX),
+      Math.round(pt.y * scaleY)
+    ]);
+
+    const res = validateQuadrilateral(originalPoints);
+    if (!res.valid) {
+      showToast(res.reason);
+      return;
+    }
+    if (res.warning) {
+      showToast(res.warning, 5000);
+    }
+
+    if (currentCropSide === 'front') {
+      frontCorners = originalPoints;
+      cropFrontBtn.textContent = 'Adjust Corners';
+      cropFrontBtn.classList.add('btn-success');
+    } else {
+      backCorners = originalPoints;
+      cropBackBtn.textContent = 'Adjust Corners';
+      cropBackBtn.classList.add('btn-success');
+    }
+
+    closeCropModalFn();
+    updateAnalyzeButtonState();
+  });
 }
 
 if (cropFrontBtn) {
   cropFrontBtn.addEventListener('click', (e) => {
-    e.stopPropagation()
-    openCropModal('front')
-  })
+    e.stopPropagation();
+    openCropModal('front');
+  });
 }
 
 if (cropBackBtn) {
   cropBackBtn.addEventListener('click', (e) => {
-    e.stopPropagation()
-    openCropModal('back')
-  })
+    e.stopPropagation();
+    openCropModal('back');
+  });
 }
 
 if (closeCropModal) closeCropModal.addEventListener('click', closeCropModalFn)
 if (cancelCropBtn) cancelCropBtn.addEventListener('click', closeCropModalFn)
-
-if (saveCropBtn) {
-  saveCropBtn.addEventListener('click', () => {
-    if (!cropperInstance) return
-
-    const canvas = cropperInstance.getCroppedCanvas({
-      maxWidth: 2048,
-      maxHeight: 2048,
-    })
-
-    canvas.toBlob((blob) => {
-      if (!blob) return
-
-      const croppedFile = new File([blob], `${currentCropSide}_cropped.jpg`, {
-        type: 'image/jpeg',
-        lastModified: Date.now()
-      })
-
-      if (currentCropSide === 'front') {
-        frontFile = croppedFile
-        frontManualCrop = true
-        previewFrontImg.src = URL.createObjectURL(croppedFile)
-      } else {
-        backFile = croppedFile
-        backManualCrop = true
-        previewBackImg.src = URL.createObjectURL(croppedFile)
-      }
-
-      closeCropModalFn()
-      showToast(`${currentCropSide === 'front' ? 'Front' : 'Back'} image cropped successfully.`)
-    }, 'image/jpeg', 0.9)
-  })
-}
 
 // ── Theme Toggle Event Listener ──
 const themeToggle = document.getElementById('themeToggle')

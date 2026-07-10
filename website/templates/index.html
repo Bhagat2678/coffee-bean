@@ -9,7 +9,6 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <script>
     (function () {
@@ -179,9 +178,9 @@
               <img id="preview-front-img" src="#" alt="Front preview" />
               <button class="remove-btn" data-side="front" title="Remove">&times;</button>
             </div>
-            <button class="crop-btn-sm hidden" id="cropFrontBtn" data-side="front">Crop Image</button>
+            <button class="crop-btn-sm hidden" id="cropFrontBtn" data-side="front">Select Corners</button>
           </div>
-
+ 
           <!-- Back Image -->
           <div class="upload-slot">
             <div class="upload-slot-badge back-badge">Back Side</div>
@@ -201,7 +200,7 @@
               <img id="preview-back-img" src="#" alt="Back preview" />
               <button class="remove-btn" data-side="back" title="Remove">&times;</button>
             </div>
-            <button class="crop-btn-sm hidden" id="cropBackBtn" data-side="back">Crop Image</button>
+            <button class="crop-btn-sm hidden" id="cropBackBtn" data-side="back">Select Corners</button>
           </div>
         </div>
 
@@ -397,24 +396,33 @@
 
   <!-- Crop Modal -->
   <div id="cropModal" class="modal hidden">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 900px; width: 95%;">
       <div class="modal-header">
-        <h3 id="cropModalTitle">Crop Image</h3>
+        <h3 id="cropModalTitle">Select Calibration Tray Corners</h3>
         <button class="close-btn" id="closeCropModal">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="cropper-container">
-          <img id="cropImage" src="" alt="Image to crop">
+        <div class="corner-picker-container" style="position: relative; display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; padding: 10px;">
+          <div style="position: relative; display: inline-block;">
+            <img id="cropImage" src="" alt="Image to mark corners" style="max-width: 100%; max-height: 65vh; display: block; user-select: none; pointer-events: none; -webkit-user-drag: none;">
+            <canvas id="cornerPickerCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair;"></canvas>
+          </div>
+        </div>
+        <div class="corner-picker-instructions" style="margin-top: 12px; font-size: 14px; text-align: center; color: var(--text-muted);">
+          Click the 4 corners of the tray in order:
+          <strong>1: Top-Left</strong> &rarr;
+          <strong>2: Top-Right</strong> &rarr;
+          <strong>3: Bottom-Right</strong> &rarr;
+          <strong>4: Bottom-Left</strong>.
         </div>
       </div>
       <div class="modal-footer">
+        <button id="resetCornersBtn" class="btn-ghost" style="margin-right: auto;">Reset Points</button>
         <button id="cancelCropBtn" class="btn-ghost">Cancel</button>
-        <button id="saveCropBtn" class="btn-primary">Apply Crop</button>
+        <button id="saveCropBtn" class="btn-primary" disabled>Apply Corners</button>
       </div>
     </div>
   </div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 

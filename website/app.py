@@ -5,6 +5,8 @@ import uuid
 import time
 import sys
 import cv2
+import json
+import numpy as np
 
 # Ensure project root is importable
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -18,6 +20,53 @@ from src.grading import (
     classify_grade,
     compute_size_stats,
 )
+
+# Calibration constants for 4-corner perspective rectification
+TEMPLATE_WIDTH_MM = 180.13
+TEMPLATE_HEIGHT_MM = 113.4
+PIXELS_PER_MM = 12.0
+OUTPUT_WIDTH_PX = round(TEMPLATE_WIDTH_MM * PIXELS_PER_MM)   # 2162
+OUTPUT_HEIGHT_PX = round(TEMPLATE_HEIGHT_MM * PIXELS_PER_MM) # 1361
+
+def rectify_image(image_path, src_corners, output_path):
+    image = cv2.imread(image_path)
+    if image is None:
+        print(f"[ERROR] Could not read image {image_path} for perspective warping.")
+        return False
+    
+    src_pts = np.array(src_corners, dtype=np.float32)
+    
+    # Calculate measured edge lengths (TL -> TR and TL -> BL)
+    edge_top = np.linalg.norm(src_pts[1] - src_pts[0])   # TL -> TR
+    edge_left = np.linalg.norm(src_pts[3] - src_pts[0])  # TL -> BL
+    
+    print(f"[DEBUG] Perspective Rectification:")
+    print(f"  edge_top (TL->TR): {edge_top:.2f} px")
+    print(f"  edge_left (TL->BL): {edge_left:.2f} px")
+    ratio = edge_top / edge_left if edge_left > 0 else 0
+    print(f"  Ratio (top/left): {ratio:.3f} (expected landscape ~1.59, portrait ~0.63)")
+    
+    if edge_top >= edge_left:
+        # Landscape: top edge is the long physical edge (180.13 mm)
+        out_w, out_h = OUTPUT_WIDTH_PX, OUTPUT_HEIGHT_PX
+        print(f"  Orientation determined: LANDSCAPE -> target {out_w}x{out_h}")
+    else:
+        # Portrait: top edge is the short physical edge (113.4 mm)
+        out_w, out_h = OUTPUT_HEIGHT_PX, OUTPUT_WIDTH_PX
+        print(f"  Orientation determined: PORTRAIT -> target {out_w}x{out_h}")
+        
+    # Target coordinates: TL, TR, BR, BL order (matches frontend click sequence)
+    dst_pts = np.array([
+        [0, 0],
+        [out_w - 1, 0],
+        [out_w - 1, out_h - 1],
+        [0, out_h - 1]
+    ], dtype=np.float32)
+    
+    matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    rectified = cv2.warpPerspective(image, matrix, (out_w, out_h))
+    cv2.imwrite(output_path, rectified)
+    return True
 
 # ArcFace mapper — optional, gracefully degrade
 try:
@@ -52,10 +101,21 @@ MAX_BOX_AREA_RATIO = 0.7
 MIN_ASPECT = 0.25
 MAX_ASPECT = 4.0
 IOU = 0.3
-BOX_SHRINK_RATIO = 0.15
+BOX_SHRINK_RATIO = 0.02
 
 # Global detector instance (initialized with SAM 2 support)
 DETECTOR = ObjectDetector(MODEL_PATH, use_sam2=True)
+
+# Load adjustments config
+ADJUSTMENTS_PATH = os.path.join(ROOT, 'automatic_spatial_co-ordinates_correction', 'adjustments.json')
+ADJUSTMENTS = {}
+if os.path.exists(ADJUSTMENTS_PATH):
+    try:
+        with open(ADJUSTMENTS_PATH, 'r') as f:
+            ADJUSTMENTS = json.load(f)
+        print(f"[INFO] Loaded adjustments for {len(ADJUSTMENTS)} images from adjustments.json")
+    except Exception as e:
+        print(f"[WARN] Failed to load adjustments.json: {e}")
 
 # ArcFace mapper instance (lazy)
 _arcface_mapper = None
@@ -82,8 +142,19 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def _run_detection(upload_path, uid, ext, manual_crop=False):
+def _run_detection(upload_path, uid, ext, manual_crop=False, rectified=False, pixels_per_mm=None, filename=None):
     """Run YOLO detection on a single image. Returns (result_dict, annotated_url)."""
+    # Reset detector template size to baseline class defaults
+    DETECTOR.TEMPLATE_WIDTH_MM = ObjectDetector.TEMPLATE_WIDTH_MM
+    DETECTOR.TEMPLATE_HEIGHT_MM = ObjectDetector.TEMPLATE_HEIGHT_MM
+
+    # If this specific original image has an adjustment scale, apply it
+    if filename and filename in ADJUSTMENTS:
+        scale = ADJUSTMENTS[filename]
+        DETECTOR.TEMPLATE_WIDTH_MM = ObjectDetector.TEMPLATE_WIDTH_MM * scale
+        DETECTOR.TEMPLATE_HEIGHT_MM = ObjectDetector.TEMPLATE_HEIGHT_MM * scale
+        print(f"[INFO] Applied adjustments scale {scale} for {filename}")
+
     annotated_name = f'{uid}_annotated.{ext}'
     annotated_path = os.path.join(app.config['ANNOTATED_FOLDER'], annotated_name)
 
@@ -106,7 +177,9 @@ def _run_detection(upload_path, uid, ext, manual_crop=False):
         box_shrink_ratio=BOX_SHRINK_RATIO,
         manual_crop=manual_crop,
         use_sam2=req_use_sam2,
-        debug=False
+        debug=False,
+        rectified=rectified,
+        pixels_per_mm=pixels_per_mm
     )
 
     annotated_url = url_for('static', filename=f'annotated/{annotated_name}')
@@ -148,20 +221,70 @@ def analyze():
     # Sample weight (default 350g)
     sample_weight = _get_request_float('sample_weight', 350.0)
 
-    # Accept manual crop indicator (if cropped on client-side)
-    front_manual_crop = request.form.get('front_manual_crop') == 'true'
-    back_manual_crop = request.form.get('back_manual_crop') == 'true'
+    # Parse corners if provided by the frontend
+    front_corners = None
+    back_corners = None
+    
+    front_corners_str = request.form.get('front_corners')
+    if front_corners_str:
+        try:
+            front_corners = json.loads(front_corners_str)
+        except Exception as e:
+            print(f"[WARN] Failed to parse front_corners: {e}")
+
+    back_corners_str = request.form.get('back_corners')
+    if back_corners_str:
+        try:
+            back_corners = json.loads(back_corners_str)
+        except Exception as e:
+            print(f"[WARN] Failed to parse back_corners: {e}")
 
     start = time.time()
+    
+    front_rectified = False
+    front_detect_path = upload_front
+    if front_corners and len(front_corners) == 4:
+        rectified_front_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{uid_front}_rectified.{ext_front}')
+        if rectify_image(upload_front, front_corners, rectified_front_path):
+            front_detect_path = rectified_front_path
+            front_rectified = True
+
+    back_rectified = False
+    back_detect_path = upload_back
+    if upload_back and back_corners and len(back_corners) == 4:
+        rectified_back_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{uid_back}_rectified.{ext_back}')
+        if rectify_image(upload_back, back_corners, rectified_back_path):
+            back_detect_path = rectified_back_path
+            back_rectified = True
+
     try:
         # ── Run detection on FRONT image ──
-        front_result, front_annotated_url = _run_detection(upload_front, uid_front, ext_front, manual_crop=front_manual_crop)
+        if front_rectified:
+            # Compensate for inner compartment mismatch (stretching)
+            # Default scale correction factor of 0.75 makes pixels_per_mm 12.0 / 0.75 = 16.0
+            rect_ppm = PIXELS_PER_MM / 0.75
+            front_result, front_annotated_url = _run_detection(
+                front_detect_path, uid_front, ext_front, rectified=True, pixels_per_mm=rect_ppm, filename=front_file.filename
+            )
+        else:
+            print("[WARN] Running old auto-calibration code path because no corners were provided.")
+            front_result, front_annotated_url = _run_detection(
+                front_detect_path, uid_front, ext_front, manual_crop=False, filename=front_file.filename
+            )
 
         # ── Run detection on BACK image (if provided) ──
         back_result = None
         back_annotated_url = None
         if upload_back:
-            back_result, back_annotated_url = _run_detection(upload_back, uid_back, ext_back, manual_crop=back_manual_crop)
+            if back_rectified:
+                rect_ppm = PIXELS_PER_MM / 0.75
+                back_result, back_annotated_url = _run_detection(
+                    back_detect_path, uid_back, ext_back, rectified=True, pixels_per_mm=rect_ppm, filename=back_file.filename
+                )
+            else:
+                back_result, back_annotated_url = _run_detection(
+                    back_detect_path, uid_back, ext_back, manual_crop=False, filename=back_file.filename
+                )
 
     except Exception as e:
         return jsonify({'error': 'Server error during inference', 'details': str(e)}), 500
@@ -187,8 +310,8 @@ def analyze():
         mapper = _get_arcface()
         if mapper:
             try:
-                front_img = cv2.imread(upload_front)
-                back_img = cv2.imread(upload_back)
+                front_img = cv2.imread(front_detect_path)
+                back_img = cv2.imread(back_detect_path)
                 front_dets = front_result.get('detections', [])
                 back_dets = back_result.get('detections', [])
 
