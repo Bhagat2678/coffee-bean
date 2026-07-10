@@ -29,8 +29,8 @@ class ObjectDetector:
     YOLOv8-based object detector for counting and classifying objects in images.
     """
 
-    TEMPLATE_WIDTH_MM = 113.52
-    TEMPLATE_HEIGHT_MM = 180.41
+    TEMPLATE_WIDTH_MM = 113.4
+    TEMPLATE_HEIGHT_MM = 180.13
     # Maximum boxes processed in a single SAM 2 decoder pass.
     # Keeps peak VRAM usage predictable on consumer GPUs (e.g. GTX 1650 4 GB).
     SAM_CHUNK_SIZE = 64
@@ -1323,11 +1323,13 @@ class ObjectDetector:
                        max_box_area_ratio=0.7,
                        min_aspect=0.25,
                        max_aspect=4.0,
-                       box_shrink_ratio=0.15,
+                       box_shrink_ratio=0.02,
                        use_contour_fallback=False,
                        manual_crop=False,
                        use_sam2=None,
-                       debug=False):
+                       debug=False,
+                       rectified=False,
+                       pixels_per_mm=None):
         """
         Detect objects in an image and count them by class with extra post-processing.
         
@@ -1369,7 +1371,14 @@ class ObjectDetector:
             }
 
         original_image_shape = {'height': image.shape[0], 'width': image.shape[1]}
-        if manual_crop:
+        if rectified:
+            crop_info = {
+                'applied': True,
+                'box': [0, 0, image.shape[1], image.shape[0]],
+                'original_shape': {'height': image.shape[0], 'width': image.shape[1]},
+                'cropped_shape': {'height': image.shape[0], 'width': image.shape[1]},
+            }
+        elif manual_crop:
             crop_info = {
                 'applied': True,
                 'box': [0, 0, image.shape[1], image.shape[0]],
@@ -1583,21 +1592,28 @@ class ObjectDetector:
         non_bean_count = sum(1 for d in enriched_detections if d.get('object_type') != 'coffee_bean')
 
         # --- Size estimation: use the cropped white plate as the only calibration reference ---
-        pixels_per_mm = None
+        pixels_per_mm_val = None
         pixels_per_mm_x = None
         pixels_per_mm_y = None
         
-        calibration = self._calibrate_from_cropped_plate(image, crop_info)
-
-        if isinstance(calibration, dict):
-            pixels_per_mm = calibration.get('avg')
-            pixels_per_mm_x = calibration.get('x')
-            pixels_per_mm_y = calibration.get('y')
+        if rectified:
+            ppm = pixels_per_mm if pixels_per_mm is not None else 12.0
+            pixels_per_mm_val = ppm
+            pixels_per_mm_x = ppm
+            pixels_per_mm_y = ppm
         else:
-            pixels_per_mm = calibration
+            calibration = self._calibrate_from_cropped_plate(image, crop_info)
+            if isinstance(calibration, dict):
+                pixels_per_mm_val = calibration.get('avg')
+                pixels_per_mm_x = calibration.get('x')
+                pixels_per_mm_y = calibration.get('y')
+            else:
+                pixels_per_mm_val = calibration
+
+        pixels_per_mm = pixels_per_mm_val
 
         if pixels_per_mm is None or pixels_per_mm == 0.0:
-            current_scale = self.TEMPLATE_HEIGHT_MM / 180.41
+            current_scale = self.TEMPLATE_HEIGHT_MM / 180.13
             fallback_ppm = (max(image.shape[0], image.shape[1]) / 204.0) / current_scale
             pixels_per_mm = fallback_ppm
             pixels_per_mm_x = fallback_ppm

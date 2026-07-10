@@ -82,14 +82,13 @@ def compute_screen_distribution(detections, pixels_per_mm=None):
 def _get_width_mm(det, pixels_per_mm):
     """
     Extract bean size in mm to use for screen classification.
-    Since Grade A is defined by length (6.35 - 6.75 mm), we use the bean's length
-    (height_mm or major axis) to map to the sieve size.
+    Using bean length (L / major axis) as requested.
     """
     # Prefer pre-computed length_mm
     if det.get("length_mm") is not None:
         return float(det["length_mm"])
 
-    # Fall back to size_mm height
+    # Fall back to size_mm height (major axis)
     sm = det.get("size_mm")
     if sm and sm.get("height"):
         return float(sm["height"])
