@@ -1554,6 +1554,25 @@ class ObjectDetector:
                     x1, y1, x2, y2 = det_copy['box']
                     cnt_abs = cnt + np.array([x1, y1])
                     det_copy['polygon'] = cnt_abs.squeeze(1).tolist()
+            else:
+                # Fallback: generate a tight polygon from Otsu thresholding
+                x1, y1, x2, y2 = det_copy['box']
+                roi = image[y1:y2, x1:x2]
+                if roi.size > 0:
+                    gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY) if len(roi.shape) == 3 else roi
+                    blur_roi = cv2.GaussianBlur(gray_roi, (5, 5), 0)
+                    try:
+                        _, otsu_mask = cv2.threshold(blur_roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                        kernel = np.ones((3, 3), np.uint8)
+                        otsu_mask = cv2.morphologyEx(otsu_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+                        fb_contours, _ = cv2.findContours(otsu_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        if fb_contours:
+                            fb_cnt = max(fb_contours, key=cv2.contourArea)
+                            if cv2.contourArea(fb_cnt) > 0.15 * (x2 - x1) * (y2 - y1):
+                                fb_cnt_abs = fb_cnt + np.array([x1, y1])
+                                det_copy['polygon'] = fb_cnt_abs.squeeze(1).tolist()
+                    except Exception:
+                        pass  # keep the rectangle polygon from model_detections
 
             color_info = self._extract_color_info(image, det_copy['box'])
             model_class = det.get('class', '').lower()
