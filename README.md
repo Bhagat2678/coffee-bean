@@ -6,12 +6,11 @@ Detect, count, grade, and analyze coffee beans using a custom YOLOv8 model. Incl
 
 - **Pre-Analysis Guide** — Step-by-step photo instructions (white calibration template, 350g sample, front & back shots)
 - **Dual Image Upload** — Upload front-facing and back-facing bean photos separately
-- **Bean Detection & Counting** — Custom YOLOv8 model with contour fallback
- - **Defect Classification** — Black, broken, foreign, moldy, overfermented, Type A, and other defect types
+- **Bean Detection & Counting** — Custom YOLOv8 model with contour f- **Defect Classification** — Multi-class defect detection and physical anomaly categorization
 - **Screen Grading** — Maps bean sizes to standard screen numbers (13–20) with aperture sizes, counts, and percentages
 - **Quality Grade (AAA→C)** — Assigns a grade based on defect count (AAA = ≤3 defects, C = 60+)
 - **Weight & Density** — Enter 350g sample weight → avg weight per bean calculated automatically
- - **Size Dimensions** — Avg length, width, L/W ratio, size class distribution (auto-calibrated from the white template)
+- **Size Dimensions** — Avg length, width, L/W ratio, size class distribution (auto-calibrated from the white template)
 - **Color Analysis** — Color distribution and pixel-level color picker
 - **ArcFace Mapping** — Front↔back bean matching infrastructure using ResNet-18 embeddings (swappable with trained ArcFace model)
 - **Web Interface** — Modern responsive Flask app with drag-and-drop upload
@@ -91,7 +90,7 @@ python website/app.py
 
 ## 📊 Model Performance
 
-Custom YOLOv8n trained on 5,505 images (3 defect classes).
+Custom YOLOv8n trained on 5,505 images across physical defect categories.
 
 | Metric     | Score |
 |------------|-------|
@@ -99,12 +98,6 @@ Custom YOLOv8n trained on 5,505 images (3 defect classes).
 | mAP50-95   | 0.756 |
 | Precision  | 0.961 |
 | Recall     | 0.942 |
-
-| Class   | Precision | Recall | mAP50 |
-|---------|-----------|--------|-------|
-| black   | 0.974     | 0.977  | 0.991 |
-| broken  | 0.978     | 0.928  | 0.940 |
-| foreign | 0.930     | 0.922  | 0.970 |
 
 ## 🏋️ Training
 
