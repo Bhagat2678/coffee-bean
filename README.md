@@ -1,6 +1,6 @@
 # ☕ Coffee Bean Detection & Analysis
 
-Detect, count, grade, and analyze coffee beans using a custom YOLOv8 model. Includes a Flask web app for instant image upload, annotated preview, screen grading, quality classification, and ArcFace-based front/back bean mapping.
+Detect, count, grade, and analyze coffee beans using a custom YOLOv8 model. Includes a Flask web app for instant image upload, annotated preview, screen grading, quality classification, and ArcFace-ready front/back bean mapping.
 
 ## ✨ Features
 
@@ -86,7 +86,7 @@ python website/app.py
    - Defect breakdown
 
 > **Important:** For accurate mm-size calibration, ensure the **white template/background** is visible in the image.
-> The system automatically detects the template (113.52mm × 180.41mm) and uses it for calibration.
+> The system automatically detects the template (113.4mm × 180.13mm) and uses it for calibration.
 
 ## 📊 Model Performance
 
@@ -96,7 +96,7 @@ Custom YOLOv8n trained on 5,505 images across physical defect categories.
 |------------|-------|
 | mAP50      | 0.967 |
 | mAP50-95   | 0.756 |
-| Precision  | 0.961 |
+| Precision  | 90.1% |
 | Recall     | 0.942 |
 
 ## 🏋️ Training

@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart TD
-    A[Input Photos: Front & Back Shots on 113.5mm x 180.4mm White Template] --> B[Template Detection & Spatial Calibration]
+    A[Input Photos: Front & Back Shots on 113.4mm x 180.13mm White Template] --> B[Template Detection & Spatial Calibration]
     B --> C{Spatial Auto-Correction Enabled?}
     C -- Yes --> D[Iterative Scale-Factor Adjustment Pipeline]
     C -- No --> E[Direct Aspect Ratio & Directional Pixels-per-mm Calculation]
@@ -24,7 +24,7 @@ flowchart TD
     P --> Q[Indian Screen Distribution Mapping: Screen 8–20]
     P --> R[Defect Classification & Anomaly Count]
     P --> S[Sample Weight & Density Computation: g/bean]
-    Q & R & S --> T[ArcFace Front-Back Bean Matcher: ResNet-18 / 512-D Embeddings + Hungarian Assignment]
+    Q & R & S --> T[Front-Back Bean Matcher: ResNet-18 / Optional ArcFace + Hungarian Assignment]
     T --> U[Final Comprehensive Report & Annotated UI Visualizations]
 ```
 
@@ -33,7 +33,7 @@ flowchart TD
 ## 2. Step-by-Step Data Processing, Transformation & Analysis Logic
 
 ### Step 1: Preprocessing & Physical Spatial Calibration
-1. **White Template Auto-Cropping**: Locates the white calibration background ($113.52\text{ mm} \times 180.41\text{ mm}$) using adaptive thresholding (`THRESH_BINARY > 180`) and contour aspect ratio validation ($1.1 \le \text{AR} \le 1.7$).
+1. **White Template Auto-Cropping**: Locates the white calibration background ($113.4\text{ mm} \times 180.13\text{ mm}$) using adaptive thresholding (`THRESH_BINARY > 180`) and contour aspect ratio validation ($1.1 \le \text{AR} \le 1.7$).
 2. **Directional Calibration**: Derives separate horizontal ($px\_per\_mm\_x$) and vertical ($px\_per\_mm\_y$) pixel-to-millimeter ratios to account for camera tilt/perspective distortion.
 3. **Spatial Coordinates Correction**: In pipeline mode, performs iterative proportional feedback adjustments ($\text{scale\_factor} \times \frac{\text{target\_len}}{\text{avg\_len}}$) to force measurements within exact standard physical thresholds.
 
@@ -54,9 +54,9 @@ flowchart TD
 2. **Quality Grade Assignment**: Computes the sample average length and assigns overall grades: **AAA** ($\ge 7.54\text{mm}$ / Screen 19+), **AA**, **A**, **B**, **C**, **BB**, **PB**, or **Triage**.
 3. **Density Calculation**: $\text{Density (g/bean)} = \frac{\text{Sample Weight (g)}}{\text{Bean Count}}$.
 
-### Step 5: Dual-Image ArcFace Mapping (Front $\leftrightarrow$ Back)
+### Step 5: Dual-Image Front-Back Matching (ArcFace-Ready)
 1. Crops individual detected beans from front and back photographs.
-2. Passes crops through an embedding backbone (ResNet-18 / ArcFace) to generate normalized 512-dimensional feature vectors.
+2. Passes crops through an embedding backbone (ResNet-18 by default; optional trained ArcFace model) to generate normalized 512-dimensional feature vectors.
 3. Computes a pairwise cosine similarity matrix.
 4. Solves global optimal 1-to-1 matching via the **Hungarian Algorithm** (`scipy.optimize.linear_sum_assignment`).
 
@@ -67,9 +67,9 @@ flowchart TD
 | Input Parameters | Processing Module | Output Data / Metrics |
 | :--- | :--- | :--- |
 | **Front Image** (RGB) | YOLOv8 + SAM 2 + PCA Shape Analyzer | • Total Bean Count & Non-Bean Count<br>• Average Bean Length, Width ($\text{mm}$), L/W Ratio<br>• Size Class Distribution (Very Small to Very Large) |
-| **Back Image** (RGB, optional) | ArcFace Feature Extraction + Hungarian Assignment | • 1:1 Front-to-Back Bean Pairings<br>• 360-Degree Defect Tracking |
+| **Back Image** (RGB, optional) | ArcFace-Ready Feature Extraction + Hungarian Assignment | • 1:1 Front-to-Back Bean Pairings<br>• Matched crop export for training |
 | **Sample Weight** (default 350g) | Density Calculator | • Average Weight per Bean ($\text{g/bean}$) |
-| **White Calibration Plate** ($113.52 \times 180.41\text{ mm}$) | ObjectDetector Calibration | • Calibrated `pixels_per_mm` (X & Y axes)<br>• Perspective Correction Factor |
+| **White Calibration Plate** ($113.4 \times 180.13\text{ mm}$) | ObjectDetector Calibration | • Calibrated `pixels_per_mm` (X & Y axes)<br>• Perspective Correction Factor |
 | **Model Defect Detections** | `src/grading.py` | • Defect Breakdown by anomaly type<br>• Defect Count & Percentage |
 | **Screen Tables** (Indian Standard) | `compute_screen_distribution()` | • Screen 8–20 Breakdown (Count & %)<br>• Quality Grade: **AAA, AA, A, B, C, BB, PB, Triage** |
 
@@ -84,8 +84,8 @@ flowchart TD
 2. **Segmentation Model**: **SAM 2.1 Hiera Large (`sam2.1_hiera_large.pt`)**
    - **Type**: Transformer-backed Foundation Model for high-fidelity zero-shot mask generation.
    - **Optimization**: PyTorch SDPA (Flash-Attention & Memory-Efficient SDP) with FP16 Autocast.
-3. **Embedding Model**: **ResNet-18 Backbone / ArcFace**
-   - **Type**: Residual Neural Network modified for feature embedding extraction (512-D bottleneck layer).
+3. **Embedding Model**: **ResNet-18 Backbone with optional ArcFace model**
+   - **Type**: Residual Neural Network used as the default feature extractor, with a swappable trained ArcFace embedding model.
 
 ### B. Preprocessing & Data Pipeline
 - **Contrast Enhancement**: CLAHE (Contrast Limited Adaptive Histogram Equalization) on grayscale ROIs.
@@ -98,7 +98,7 @@ flowchart TD
 - **Metrics Achieved**:
   - **mAP50**: `0.967`
   - **mAP50-95**: `0.756`
-  - **Precision**: `0.961`
+  - **Precision**: `90.1%`
   - **Recall**: `0.942`
 
 ---
@@ -108,5 +108,7 @@ flowchart TD
 1. **Midline Crease vs Bounding Box Measurement**: Conventional CV systems rely on rectangular bounding boxes or minimum bounding rectangles, which overestimate curved coffee bean sizes. This system extracts the actual midline crease via PCA alignment, matching physical sieve retention closely.
 2. **Centroid-Prompted SAM 2 Batching**: Integrates SAM 2 using centroid prompts in 64-box chunks, preventing GPU Out-Of-Memory (OOM) errors on consumer hardware while delivering sub-pixel boundary accuracy.
 3. **Automatic Spatial Coordinates Correction**: Includes a dedicated auto-calibration loop (`pipeline.py`) that adjusts scale factors based on background template detection, ensuring standard physical grade conformity across varying camera heights and angles.
-4. **ArcFace Front-Back Bean Matching**: Features deep metric learning embeddings combined with Hungarian assignment to track both surfaces of an individual coffee bean, ensuring defects on the hidden side are caught.
+4. **ArcFace-Ready Front-Back Bean Matching**: Uses feature embeddings combined with Hungarian assignment to pair front and back crops; a trained ArcFace model can be swapped in later for higher-fidelity matching.
 5. **Hybrid AI + CV Fallback System**: Prevents pipeline failure on unusual lighting or high-density bean overlap by gracefully falling back from YOLOv8 to scale-aware HSV/LAB morphology and watershed segmentation.
+
+
