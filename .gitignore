@@ -27,6 +27,8 @@ models/*.pt
 website/uploads/
 website/static/annotated/
 website/static/pairs/
+website/static/crops/
+artifacts/
 
 # IDE
 .vscode/
